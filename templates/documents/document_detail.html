@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+{% block title %}{{ document.title }} - EduHub{% endblock %}
+{% block content %}
+<h1>{{ document.title }}</h1>
+<p class="text-muted">Danh mục: {{ document.category|default:"Chưa phân loại" }} | Đăng bởi {{ document.uploader.username }} ngày {{ document.uploaded_at|date:"d/m/Y" }}</p>
+<p>{{ document.description }}</p>
+<a href="{{ document.file.url }}" class="btn btn-success" download>Tải xuống tài liệu</a>
+<a href="{% url 'document_list' %}" class="btn btn-link">Quay lại danh sách</a>
+{% endblock %}
