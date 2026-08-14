@@ -18,7 +18,8 @@
                         <button class="btn btn-secondary" type="submit">Đăng xuất ({{ user.username }})</button>
                     </form>
                 {% else %}
-                    <a class="btn btn-outline-light" href="{% url 'login' %}">Đăng nhập</a>
+                    <a class="btn btn-outline-light me-2" href="{% url 'login' %}">Đăng nhập</a>
+                    <a class="btn btn-primary" href="{% url 'signup' %}">Đăng ký</a>
                 {% endif %}
             </div>
         </div>
