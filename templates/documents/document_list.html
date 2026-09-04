@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Danh sách tài liệu - EduHub{% endblock %}
+{% block content %}
+<h1 class="mb-4">Tài liệu học tập</h1>
+
+<form method="get" class="mb-4 d-flex">
+    <input type="text" name="q" class="form-control me-2" placeholder="Tìm theo tiêu đề..." value="{{ request.GET.q }}">
+    <button class="btn btn-primary" type="submit">Tìm</button>
+</form>
+
+<div class="row row-cols-1 row-cols-md-3 g-4">
+    {% for document in documents %}
+    <div class="col">
+        <div class="card h-100">
+            <div class="card-body">
+                <h5 class="card-title">{{ document.title }}</h5>
+                <p class="card-text text-muted">{{ document.category|default:"Chưa phân loại" }}</p>
+                <p class="card-text">{{ document.description|truncatewords:20 }}</p>
+                <a href="{% url 'document_detail' document.pk %}" class="btn btn-sm btn-outline-primary">Xem chi tiết</a>
+            </div>
+            <div class="card-footer text-muted small">
+                Đăng bởi {{ document.uploader.username }} - {{ document.uploaded_at|date:"d/m/Y" }}
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <p>Chưa có tài liệu nào.</p>
+    {% endfor %}
+</div>
+
+{% if is_paginated %}
+<nav class="mt-4">
+    <ul class="pagination">
+        {% if page_obj.has_previous %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">«</a></li>
+        {% endif %}
+        <li class="page-item disabled"><span class="page-link">Trang {{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}
+        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">»</a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
