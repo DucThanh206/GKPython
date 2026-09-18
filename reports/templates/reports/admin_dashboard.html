@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Thống kê, báo cáo{% endblock %}
+
+{% block content %}
+<div class="container" style="margin-top:30px;">
+  <h2>Thống kê, báo cáo</h2>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- B2: chọn loại thống kê & khoảng thời gian -->
+  <form method="get" class="row g-2 align-items-end mb-4">
+    <div class="col-auto">
+      <label class="form-label">{{ filter_form.report_type.label }}</label>
+      {{ filter_form.report_type }}
+    </div>
+    <div class="col-auto">
+      <label class="form-label">{{ filter_form.period_start.label }}</label>
+      {{ filter_form.period_start }}
+    </div>
+    <div class="col-auto">
+      <label class="form-label">{{ filter_form.period_end.label }}</label>
+      {{ filter_form.period_end }}
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">Xem thống kê</button>
+    </div>
+  </form>
+  {% if filter_form.non_field_errors %}
+    <div class="alert alert-danger">{{ filter_form.non_field_errors }}</div>
+  {% endif %}
+
+  <!-- B4: hiển thị số liệu thống kê -->
+  <div class="card mb-4">
+    <div class="card-header">
+      Kết quả: <strong>{{ report_type }}</strong> ({{ period_start }} → {{ period_end }})
+    </div>
+    <div class="card-body">
+      <table class="table">
+        <tbody>
+          {% for key, value in data.items %}
+            {% if key != "report_type" %}
+            <tr>
+              <th style="width:280px;">{{ key }}</th>
+              <td>
+                {% if value == None %}
+                  <span class="text-muted">Không có dữ liệu</span>
+                {% else %}
+                  {{ value }}
+                {% endif %}
+              </td>
+            </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- B3 (tùy chọn): Xuất báo cáo -->
+  <div class="card">
+    <div class="card-header">Xuất báo cáo</div>
+    <div class="card-body">
+      <form method="get" action="{% url 'reports:export_statistics_report' %}" class="row g-2 align-items-end">
+        <input type="hidden" name="report_type" value="{{ report_type }}">
+        <input type="hidden" name="period_start" value="{{ period_start|date:'Y-m-d' }}">
+        <input type="hidden" name="period_end" value="{{ period_end|date:'Y-m-d' }}">
+        <div class="col-auto">
+          <label class="form-label">Định dạng file</label>
+          {{ export_form.file_format }}
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-success">Tải xuống</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -41,6 +41,8 @@ INSTALLED_APPS = [
     # Apps của project
     'accounts',
     'documents',
+    'reports',
+
 ]
 
 AUTH_USER_MODEL = 'accounts.User'
@@ -135,6 +137,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # Email
+ADMINS = [("Admin", "admin@example.com")]
+DEFAULT_FROM_EMAIL = "no-reply@thuvien.com"
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
 MAILERS = {

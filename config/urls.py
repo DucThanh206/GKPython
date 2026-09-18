@@ -10,6 +10,7 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('accounts/', include('accounts.urls')),
     path('', include('documents.urls')),
+    path("reports/", include("reports.urls")),
 ]
 
 if settings.DEBUG:

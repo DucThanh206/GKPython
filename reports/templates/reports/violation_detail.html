@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Chi tiết báo cáo #{{ report.id }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width:700px;margin-top:30px;">
+  <h2>Chi tiết báo cáo #{{ report.id }}</h2>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <table class="table table-bordered">
+    <tr><th style="width:220px;">Người báo cáo</th><td>{{ report.reporter }}</td></tr>
+    <tr><th>Đối tượng bị báo cáo</th><td>{{ report.get_target_type_display }} #{{ report.target_id }}</td></tr>
+    <tr>
+      <th>Nội dung / chi tiết đối tượng</th>
+      <td>
+        {% if target %}
+          {{ target }}
+        {% else %}
+          <span class="text-muted">Không tìm thấy đối tượng (có thể đã bị xóa).</span>
+        {% endif %}
+      </td>
+    </tr>
+    <tr><th>Lý do báo cáo</th><td>{{ report.reason }}</td></tr>
+    <tr><th>Trạng thái hiện tại</th><td>{{ report.get_status_display }}</td></tr>
+    <tr><th>Ngày gửi báo cáo</th><td>{{ report.created_at|date:"d/m/Y H:i" }}</td></tr>
+    {% if report.handled_by %}
+    <tr><th>Đã xử lý bởi</th><td>{{ report.handled_by }} — {{ report.resolved_at|date:"d/m/Y H:i" }}</td></tr>
+    <tr><th>Ghi chú xử lý</th><td>{{ report.resolution_note }}</td></tr>
+    {% endif %}
+  </table>
+
+  {% if report.status == "pending" %}
+  <form method="post">
+    {% csrf_token %}
+    <div class="mb-3">
+      <label class="form-label d-block">{{ form.action.label }}</label>
+      {{ form.action }}
+      {% if form.action.errors %}<div class="text-danger small">{{ form.action.errors }}</div>{% endif %}
+    </div>
+    <div class="mb-3">
+      <label class="form-label">{{ form.note.label }}</label>
+      {{ form.note }}
+    </div>
+    <button type="submit" class="btn btn-primary">Xác nhận xử lý</button>
+    <a href="{% url 'reports:violation_report_list' %}" class="btn btn-secondary">Quay lại</a>
+  </form>
+  {% else %}
+    <a href="{% url 'reports:violation_report_list' %}" class="btn btn-secondary">Quay lại danh sách</a>
+  {% endif %}
+</div>
+{% endblock %}
