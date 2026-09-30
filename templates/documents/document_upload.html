@@ -1,10 +1,63 @@
 {% extends 'base.html' %}
-{% block title %}Đăng tài liệu - EduHub{% endblock %}
+{% block title %}Chia sẻ tài liệu - EduHub{% endblock %}
 {% block content %}
-<h1 class="mb-4">Đăng tài liệu mới</h1>
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-primary">Đăng tài liệu</button>
-</form>
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <a href="{% url 'document_list' %}" class="back-link">← Quay lại thư viện</a>
+        <div class="form-page-heading">
+            <div class="eyebrow">Đóng góp cho cộng đồng</div>
+            <h1 class="mt-2 mb-2">Chia sẻ tài liệu</h1>
+            <p class="text-muted mb-0">Tải lên ghi chú, giáo trình hoặc tài liệu hữu ích để cùng nhau học tốt hơn.</p>
+        </div>
+        <div class="form-surface">
+            <div class="alert alert-info">Tài liệu mới sẽ được quản trị viên xem xét trước khi xuất hiện trong thư viện công khai.</div>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                {% for field in form %}
+                    {% if field.name != 'new_category' %}
+                        <div class="upload-field">
+                            <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span class="required-mark"> *</span>{% endif %}</label>
+                            {{ field }}
+                            {% if field.name == 'category' %}
+                                <div id="new-category-field" class="mt-2" {% if request.POST.category != form.NEW_CATEGORY_VALUE %}hidden{% endif %}>
+                                    {{ form.new_category }}
+                                    {% if form.new_category.errors %}<div class="field-error">{{ form.new_category.errors }}</div>{% endif %}
+                                </div>
+                            {% endif %}
+                            {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+                {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+                <div class="d-flex flex-wrap gap-2 mt-4">
+                    <button type="submit" class="btn btn-dark">Tải lên và gửi duyệt</button>
+                    <a href="{% url 'document_list' %}" class="btn btn-outline-secondary">Hủy</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<style>
+    .back-link { display: inline-block; margin-bottom: 22px; color: var(--quiet); font-size: 13px; }
+    .form-page-heading { margin-bottom: 24px; }
+    .form-page-heading h1 { font-size: 38px; }
+    .form-surface { padding: clamp(20px, 4vw, 34px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .upload-field { margin-bottom: 20px; }
+    .upload-field .form-label { margin-bottom: 7px; }
+    .required-mark { color: #a7473e; }
+    .field-error { margin-top: 6px; color: #a7473e; font-size: 12px; }
+    .field-error ul { margin-bottom: 0; padding-left: 18px; }
+</style>
+<script>
+    const categorySelect = document.getElementById('id_category');
+    const newCategoryField = document.getElementById('new-category-field');
+    const emptyCategoryOption = [...categorySelect.options].find(
+        (option) => option.value === ''
+    );
+    emptyCategoryOption.hidden = true;
+    categorySelect.addEventListener('change', () => {
+        newCategoryField.hidden = categorySelect.value !== '{{ form.NEW_CATEGORY_VALUE }}';
+    });
+</script>
 {% endblock %}

@@ -1,9 +1,226 @@
 {% extends 'base.html' %}
 {% block title %}{{ document.title }} - EduHub{% endblock %}
 {% block content %}
-<h1>{{ document.title }}</h1>
-<p class="text-muted">Danh mục: {{ document.category|default:"Chưa phân loại" }} | Đăng bởi {{ document.uploader.username }} ngày {{ document.uploaded_at|date:"d/m/Y" }}</p>
-<p>{{ document.description }}</p>
-<a href="{{ document.file.url }}" class="btn btn-success" download>Tải xuống tài liệu</a>
-<a href="{% url 'document_list' %}" class="btn btn-link">Quay lại danh sách</a>
+<a href="{% url 'document_list' %}" class="back-link">← Quay lại thư viện</a>
+
+<header class="detail-header">
+    <div class="eyebrow mb-3">{{ document.category|default:"Tài liệu học tập" }}{% if document.subject %}<span class="mx-2">·</span>{{ document.subject }}{% endif %}</div>
+    <h1>{{ document.title }}</h1>
+    <p class="detail-description">{{ document.description|default:"Tài liệu này chưa có mô tả."|linebreaksbr }}</p>
+    <div class="detail-byline">
+        <span class="author-mark author-mark-large" aria-hidden="true">{{ document.uploader.username|slice:"0:1"|upper }}</span>
+        <div><strong>{{ document.uploader.full_name|default:document.uploader.username }}</strong><span>Đăng ngày {{ document.uploaded_at|date:"d/m/Y" }}</span></div>
+        <span class="meta-divider"></span>
+        <span>{{ document.view_count }} lượt xem</span>
+        <span>·</span>
+        <span>{{ document.download_count }} lượt tải</span>
+    </div>
+</header>
+
+{% if document.status == 'pending' %}
+    <div class="alert alert-warning mb-4">Tài liệu đang chờ quản trị viên kiểm duyệt. Chỉ bạn và quản trị viên có thể xem trong thời gian này.</div>
+{% elif document.status == 'rejected' %}
+    <div class="alert alert-danger mb-4">Tài liệu này đã bị gỡ khỏi thư viện công khai.</div>
+{% endif %}
+
+<div class="detail-actions mb-4">
+    {% if can_view_content and user.is_authenticated %}
+        <a href="{% url 'document_download' document.pk %}" class="btn btn-dark">↓ Tải tài liệu</a>
+    {% elif can_view_content %}
+        <div class="alert alert-info mb-0">Đăng nhập để tải tài liệu. <a href="{% url 'login' %}?next={{ request.path|urlencode }}">Đăng nhập</a></div>
+    {% else %}
+        <div class="alert alert-info mb-0">Cần đăng nhập để tiếp tục xem tài liệu này. <a href="{% url 'login' %}?next={{ request.path|urlencode }}">Đăng nhập</a></div>
+    {% endif %}
+    {% if document.status == 'approved' and user.is_authenticated %}
+        <form method="post" action="{% url 'toggle_favorite' document.pk %}" class="d-inline">
+            {% csrf_token %}
+            <button class="btn btn-outline-secondary" type="submit">{% if is_favorite %}♥ Đã yêu thích{% else %}♡ Lưu vào thư viện{% endif %}</button>
+        </form>
+        <div class="dropdown d-inline-block">
+            <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" type="button">Chia sẻ</button>
+            <ul class="dropdown-menu">
+                <li><button class="dropdown-item" type="button" data-copy-link="{{ request.build_absolute_uri }}">Sao chép liên kết</button></li>
+                <li><a class="dropdown-item" data-share-platform="facebook" target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u={{ request.build_absolute_uri|urlencode }}">Facebook</a></li>
+                <li><a class="dropdown-item" data-share-platform="zalo" target="_blank" rel="noopener" href="https://zalo.me/share?url={{ request.build_absolute_uri|urlencode }}">Zalo</a></li>
+            </ul>
+        </div>
+        <form method="post" action="{% url 'share_document' document.pk %}" id="share-log" class="d-none">
+            {% csrf_token %}<input type="hidden" name="platform" value="copy_link">
+        </form>
+    {% endif %}
+    {% if user.is_authenticated and document.status == 'approved' %}
+        <a href="{% url 'reports:report_violation' 'document' document.pk %}" class="report-link ms-auto">Báo cáo vi phạm</a>
+    {% endif %}
+</div>
+
+{% if can_view_content %}
+<section class="preview-panel mb-5" aria-labelledby="document-content-heading">
+    <div class="preview-heading">
+        <div><div class="eyebrow">Không gian đọc</div><h2 id="document-content-heading" class="h5 mb-0 mt-1">Nội dung tài liệu</h2></div>
+        <span class="preview-file-icon" aria-hidden="true">▤</span>
+    </div>
+    <div class="preview-content">
+        {% if preview_kind == 'pdf' %}
+            <iframe class="pdf-preview" src="{{ preview_url }}" title="Nội dung {{ document.title }}"></iframe>
+            <p class="mt-3 mb-0 text-center"><a href="{{ preview_url }}" target="_blank" rel="noopener">Mở tài liệu trong tab mới ↗</a></p>
+        {% elif preview_kind == 'docx' or preview_kind == 'text' %}
+            {% if preview_error %}
+                <div class="alert alert-warning mb-0">{{ preview_error }}</div>
+            {% else %}
+                <article class="text-preview">{{ preview_content }}</article>
+            {% endif %}
+        {% else %}
+            <div class="empty-state">
+                <span class="empty-state-mark" aria-hidden="true">▤</span>
+                <h3 class="h5">Chưa hỗ trợ xem trước định dạng này</h3>
+                {% if user.is_authenticated %}<a href="{% url 'document_download' document.pk %}">Tải tài liệu để mở bằng ứng dụng phù hợp</a>{% endif %}
+            </div>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+{% if document.status == 'approved' and can_view_content %}
+<div class="row g-4">
+    <div class="col-lg-4">
+        <section class="interaction-card h-100">
+            <div class="eyebrow">Chia sẻ phản hồi</div>
+            <h2 class="h5 mt-2">Đánh giá tài liệu</h2>
+            <p class="rating-score"><strong>{{ document.average_rating|floatformat:1 }}</strong><span>/ 5 sao</span></p>
+            {% if user_rating %}
+                <p class="small text-muted mb-0">Bạn đã đánh giá {{ user_rating.stars }}/5 sao.</p>
+            {% else %}
+                <form method="post" action="{% url 'document_interaction' document.pk %}">
+                    {% csrf_token %}<input type="hidden" name="action" value="rating">
+                    <fieldset class="rating-options">
+                        <legend class="visually-hidden">Chọn số sao</legend>
+                        {% for radio in rating_form.stars %}
+                            <label class="rating-option" for="{{ radio.id_for_label }}">{{ radio.tag }}<span>{{ radio.choice_label }}</span></label>
+                        {% endfor %}
+                    </fieldset>
+                    <button class="btn btn-dark btn-sm mt-3" type="submit">Gửi đánh giá</button>
+                    {% if not user.is_authenticated %}<p class="small text-muted mt-2 mb-0">Bạn sẽ được yêu cầu đăng nhập để lưu.</p>{% endif %}
+                </form>
+            {% endif %}
+        </section>
+    </div>
+    <div class="col-lg-8">
+        <section class="interaction-card">
+            <div class="eyebrow">Cộng đồng học tập</div>
+            <h2 class="h5 mt-2">Bình luận <span class="comment-count">{{ comments|length }}</span></h2>
+            <form method="post" action="{% url 'document_interaction' document.pk %}" class="comment-form mb-4">
+                {% csrf_token %}<input type="hidden" name="action" value="comment">
+                {{ comment_form.content }}
+                <button class="btn btn-dark btn-sm mt-2" type="submit">Đăng bình luận</button>
+                {% if not user.is_authenticated %}<span class="small text-muted ms-2">Đăng nhập sau khi gửi để lưu bình luận.</span>{% endif %}
+            </form>
+            <div class="comment-list">
+                {% for comment in comments %}
+                    <article class="comment-item">
+                        <div class="author-mark" aria-hidden="true">{{ comment.user.username|slice:"0:1"|upper }}</div>
+                        <div class="comment-content">
+                            <div class="comment-meta"><strong>{{ comment.user.full_name|default:comment.user.username }}</strong><span>{{ comment.created_at|date:"d/m/Y H:i" }}{% if comment.is_edited %} · đã chỉnh sửa{% endif %}</span></div>
+                            <p>{{ comment.content|linebreaksbr }}</p>
+                            <div class="comment-actions">
+                                {% if user.is_authenticated and user.pk == comment.user_id %}
+                                    <a href="{% url 'edit_comment' comment.pk %}">Sửa</a>
+                                    <form method="post" action="{% url 'delete_comment' comment.pk %}" class="d-inline">
+                                        {% csrf_token %}<button type="submit" class="text-action danger-action">Xóa</button>
+                                    </form>
+                                {% endif %}
+                                {% if user.is_authenticated %}<a class="text-action danger-action" href="{% url 'reports:report_violation' 'comment' comment.pk %}">Báo cáo</a>{% endif %}
+                            </div>
+                        </div>
+                    </article>
+                {% empty %}<p class="text-muted small mb-0">Chưa có bình luận nào. Hãy là người đầu tiên chia sẻ suy nghĩ của bạn.</p>{% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endif %}
+
+<style>
+    .back-link { display: inline-block; margin-bottom: 26px; color: var(--quiet); font-size: 13px; }
+    .back-link:hover { color: var(--ink); }
+    .detail-header { max-width: 900px; padding: 6px 0 22px; }
+    .detail-header h1 { max-width: 850px; margin-bottom: 14px; font-size: clamp(2.3rem, 5vw, 3.5rem); letter-spacing: -.055em; }
+    .detail-description { max-width: 760px; margin-bottom: 22px; color: var(--quiet); font-size: 15px; }
+    .detail-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: var(--quiet); font-size: 12px; }
+    .detail-byline > div { display: flex; flex-direction: column; margin-right: 8px; line-height: 1.4; }
+    .detail-byline strong { color: var(--copy); font-size: 12px; }
+    .detail-byline > div span { font-size: 11px; }
+    .author-mark-large { width: 38px; height: 38px; }
+    .meta-divider { width: 1px; height: 22px; margin: 0 6px; background: var(--line); }
+    .detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .report-link { color: #985148; font-size: 12px; }
+    .preview-panel, .interaction-card { overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .preview-heading { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid rgba(0,0,0,.08); }
+    .preview-file-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 8px; background: var(--warm); }
+    .preview-content { padding: 16px; background: var(--cloud); }
+    .pdf-preview { display: block; width: 100%; height: min(82vh, 900px); min-height: 520px; border: 0; border-radius: 8px; background: var(--board); }
+    .text-preview { min-height: 300px; max-height: 75vh; overflow: auto; padding: 28px; border-radius: 8px; background: var(--paper); color: var(--copy); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .interaction-card { padding: 22px; }
+    .rating-score { display: flex; align-items: baseline; gap: 7px; margin: 15px 0; color: var(--quiet); }
+    .rating-score strong { color: var(--ink); font-family: var(--font-display); font-size: 35px; font-weight: 500; }
+    .rating-options { display: flex; flex-wrap: wrap; gap: 6px; border: 0; padding: 0; }
+    .rating-option { position: relative; cursor: pointer; }
+    .rating-option input { position: absolute; opacity: 0; }
+    .rating-option span { display: block; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; color: var(--quiet); font-size: 11px; }
+    .rating-option input:checked + span { border-color: var(--ink); background: var(--ink); color: white; }
+    .rating-option input:focus-visible + span { outline: 3px solid rgba(32,125,255,.25); }
+    .comment-count { display: inline-grid; min-width: 23px; height: 23px; margin-left: 5px; place-items: center; border-radius: 50%; background: var(--cloud); color: var(--quiet); font: 11px var(--font-ui); vertical-align: middle; }
+    .comment-form .form-control { min-height: 86px; }
+    .comment-item { display: flex; gap: 11px; padding: 17px 0; border-top: 1px solid rgba(0,0,0,.08); }
+    .comment-content { flex: 1; min-width: 0; }
+    .comment-meta { display: flex; flex-wrap: wrap; gap: 9px; align-items: baseline; }
+    .comment-meta strong { color: var(--copy); font-size: 12px; }
+    .comment-meta span { color: var(--quiet); font-size: 11px; }
+    .comment-content p { margin: 7px 0; color: var(--copy); font-size: 13px; }
+    .comment-actions { display: flex; gap: 12px; font-size: 11px; }
+    .text-action { border: 0; padding: 0; background: none; color: var(--quiet); font: inherit; }
+    .text-action:hover { color: var(--ink); }
+    .danger-action { color: #985148; }
+    @media (max-width: 575.98px) {
+        .detail-actions > .report-link { width: 100%; margin-left: 0 !important; }
+        .preview-content { padding: 8px; }
+        .pdf-preview { min-height: 420px; }
+        .interaction-card { padding: 17px; }
+    }
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+async function logShare(platform) {
+    const form = document.querySelector('#share-log');
+    const body = new FormData(form);
+    body.set('platform', platform);
+    const response = await fetch(form.action, {
+        method: 'POST',
+        body,
+        credentials: 'same-origin'
+    });
+    if (!response.ok) {
+        throw new Error('Share could not be recorded.');
+    }
+}
+
+document.querySelector('[data-copy-link]')?.addEventListener('click', async (event) => {
+    const link = event.currentTarget.dataset.copyLink;
+    try {
+        await navigator.clipboard.writeText(link);
+        await logShare('copy_link');
+        alert('Đã sao chép liên kết chia sẻ.');
+    } catch (error) {
+        alert('Không thể hoàn tất chia sẻ. Vui lòng thử lại hoặc sao chép địa chỉ trên trình duyệt.');
+    }
+});
+
+document.querySelectorAll('[data-share-platform]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+        logShare(event.currentTarget.dataset.sharePlatform).catch(() => {
+            alert('Không thể ghi nhận thao tác chia sẻ. Liên kết mạng xã hội vẫn được mở.');
+        });
+    });
+});
+</script>
 {% endblock %}

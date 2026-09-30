@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Quản lý tài khoản - EduHub{% endblock %}
+{% block content %}
+<header class="admin-page-heading">
+    <div><div class="eyebrow">Điều hành cộng đồng</div><h1 class="mt-2 mb-2">Quản lý tài khoản</h1><p class="text-muted mb-0">Theo dõi vai trò và trạng thái hoạt động của thành viên.</p></div>
+    <span class="admin-page-icon" aria-hidden="true">♙</span>
+</header>
+<div class="account-summary mb-3"><strong>{{ users|length }}</strong><span>tài khoản trong hệ thống</span></div>
+<div class="table-responsive">
+    <table class="table">
+        <thead><tr><th>Thành viên</th><th>Email</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+        <tbody>
+        {% for account in users %}
+            <tr>
+                <td><div class="account-cell"><span class="author-mark" aria-hidden="true">{{ account.username|slice:"0:1"|upper }}</span><div><strong>{{ account.full_name|default:account.username }}</strong><small>@{{ account.username }}</small></div></div></td>
+                <td>{{ account.email|default:"—" }}</td>
+                <td><span class="role-label">{{ account.get_role_display }}</span></td>
+                <td>{% if account.is_active %}<span class="status-pill status-approved">Đang hoạt động</span>{% else %}<span class="status-pill status-rejected">Đã khóa</span>{% endif %}</td>
+                <td>
+                    {% if account.pk != user.pk %}
+                    <form method="post" action="{% url 'toggle_account_status' account.pk %}">
+                        {% csrf_token %}
+                        <button class="btn btn-sm {% if account.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}" type="submit">{% if account.is_active %}Khóa tài khoản{% else %}Mở khóa{% endif %}</button>
+                    </form>
+                    {% else %}<span class="text-muted small">Tài khoản của bạn</span>{% endif %}
+                </td>
+            </tr>
+        {% empty %}<tr><td colspan="5" class="text-center text-muted py-5">Chưa có tài khoản nào.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+<style>
+    .admin-page-heading { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 25px; }
+    .admin-page-heading h1 { font-size: 38px; }
+    .admin-page-icon { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 14px; background: var(--warm); color: var(--copy); font-size: 22px; }
+    .account-summary { display: flex; align-items: baseline; gap: 8px; color: var(--quiet); font-size: 12px; }
+    .account-summary strong { color: var(--ink); font-family: var(--font-display); font-size: 24px; font-weight: 500; }
+    .account-cell { display: flex; align-items: center; gap: 10px; }
+    .account-cell > div { display: flex; flex-direction: column; }
+    .account-cell strong { color: var(--copy); font-size: 13px; }
+    .account-cell small { color: var(--quiet); font-size: 11px; }
+    .role-label { color: var(--copy); font-size: 12px; }
+    @media (max-width: 575.98px) { .admin-page-heading h1 { font-size: 31px; } }
+</style>
+{% endblock %}

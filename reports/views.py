@@ -7,14 +7,21 @@ UC14 - Thống kê, báo cáo           -> statistics_dashboard, export_statisti
 """
 
 from datetime import date, timedelta
+import logging
+import smtplib
+from pathlib import PurePosixPath
 
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.core.mail import mail_admins
-from django.db.models import Count, Q
-from django.http import Http404, HttpResponse
+from django.db import DatabaseError
+from django.db.models import Count
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -25,9 +32,14 @@ from .forms import (
     ViolationHandleForm,
     ViolationReportForm,
 )
-from .models import StatisticsReport, ViolationReport
+from .models import (
+    STATISTICS_REPORT_RETENTION_DAYS,
+    StatisticsReport,
+    ViolationReport,
+)
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 # =========================================================================
@@ -50,7 +62,9 @@ def report_violation(request, target_type, target_id):
     initial = {"target_type": target_type, "target_id": target_id}
 
     if request.method == "POST":
-        form = ViolationReportForm(request.POST, initial=initial)
+        form_data = request.POST.copy()
+        form_data.update(initial)
+        form = ViolationReportForm(form_data, initial=initial)
         if form.is_valid():
             report = form.save(commit=False)
             report.reporter = request.user
@@ -58,12 +72,16 @@ def report_violation(request, target_type, target_id):
             report.target_id = target_id
             try:
                 report.full_clean()
-            except Exception as exc:  # đối tượng bị báo cáo không tồn tại
-                messages.error(request, "; ".join(sum(exc.message_dict.values(), [])) if hasattr(exc, "message_dict") else str(exc))
+            except ValidationError as exc:
+                messages.error(request, '; '.join(exc.messages))
                 return render(request, "reports/report_form.html", {"form": form})
 
             report.save()
-            _notify_admins_new_report(report)  # B5
+            if not _notify_admins_new_report(report):  # B5
+                messages.warning(
+                    request,
+                    'Báo cáo đã được lưu nhưng email thông báo cho Admin không gửi được.',
+                )
             messages.success(request, "Đã gửi báo cáo. Cảm ơn bạn đã phản ánh!")  # B6
             return redirect(_get_target_redirect_url(report))
     else:
@@ -86,10 +104,14 @@ def _notify_admins_new_report(report: ViolationReport):
         f"Thời gian: {report.created_at:%d/%m/%Y %H:%M}\n"
     )
     try:
-        mail_admins(subject, message, fail_silently=True)
-    except Exception:
-        # Không để lỗi gửi mail làm hỏng luồng báo cáo chính.
-        pass
+        sent_count = mail_admins(subject, message)
+    except (OSError, smtplib.SMTPException, ValueError):
+        logger.exception("Could not email administrators about violation report %s", report.pk)
+        return False
+    if sent_count != 1:
+        logger.error("No administrator email was sent for violation report %s", report.pk)
+        return False
+    return True
 
 
 def _get_target_redirect_url(report: ViolationReport):
@@ -159,11 +181,24 @@ def violation_report_detail(request, pk):
             action = form.cleaned_data["action"]
             note = form.cleaned_data["note"]
             report.apply_action(action=action, admin_user=request.user, note=note)
-            _notify_reporter_result(report, action)  # B5
+            notification_sent = _notify_reporter_result(report, action)  # B5
+            owner_notified = True
+            if action == ViolationReport.Action.WARN:
+                owner_notified = _notify_content_owner(report)
             messages.success(
                 request,
                 f"Đã xử lý báo cáo #{report.id}: {ViolationReport.get_action_label(action)}.",
             )
+            if not notification_sent:
+                messages.warning(
+                    request,
+                    'Báo cáo đã được xử lý nhưng email thông báo cho người báo cáo không gửi được.',
+                )
+            if action == ViolationReport.Action.WARN and not owner_notified:
+                messages.warning(
+                    request,
+                    'Đã lưu lịch sử cảnh báo nhưng email cho người đăng không gửi được hoặc tài khoản chưa có email.',
+                )
             return redirect("reports:violation_report_list")
     else:
         form = ViolationHandleForm()
@@ -178,7 +213,7 @@ def violation_report_detail(request, pk):
 def _notify_reporter_result(report: ViolationReport, action: str):
     """UC09 B5 - Thông báo kết quả xử lý cho người đã gửi báo cáo."""
     if not getattr(report.reporter, "email", None):
-        return
+        return False
     subject = f"Kết quả xử lý báo cáo vi phạm #{report.id}"
     message = (
         f"Báo cáo của bạn với {report.get_target_type_display()} #{report.target_id} "
@@ -188,15 +223,50 @@ def _notify_reporter_result(report: ViolationReport, action: str):
     try:
         from django.core.mail import send_mail
 
-        send_mail(
+        sent_count = send_mail(
             subject,
             message,
             getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@example.com"),
             [report.reporter.email],
-            fail_silently=True,
         )
-    except Exception:
-        pass
+    except (OSError, smtplib.SMTPException, ValueError):
+        logger.exception("Could not email reporter about violation report %s", report.pk)
+        return False
+    return sent_count == 1
+
+
+def _notify_content_owner(report: ViolationReport):
+    """Email the uploader/commenter; the report row records who warned them and why."""
+    target = report.get_target()
+    if target is None:
+        return False
+    owner = (
+        getattr(target, "uploader", None)
+        if report.target_type == ViolationReport.TargetType.DOCUMENT
+        else getattr(target, "user", None)
+    )
+    email = getattr(owner, "email", None)
+    if not email:
+        return False
+
+    try:
+        from django.core.mail import send_mail
+
+        sent_count = send_mail(
+            f"Cảnh báo về nội dung bạn đã đăng (báo cáo #{report.pk})",
+            (
+                f"Nội dung {report.get_target_type_display()} #{report.target_id} "
+                "đã bị quản trị viên cảnh báo sau khi xem xét báo cáo.\n"
+                f"Lý do báo cáo: {report.reason}\n"
+                f"Ghi chú xử lý: {report.resolution_note or '(không có)'}"
+            ),
+            settings.DEFAULT_FROM_EMAIL,
+            [email],
+        )
+    except (OSError, smtplib.SMTPException, ValueError):
+        logger.exception("Could not email content owner about warning %s", report.pk)
+        return False
+    return sent_count == 1
 
 
 # =========================================================================
@@ -232,7 +302,25 @@ def statistics_dashboard(request):
             "period_end": period_end,
         }
     )
+    export_history = list(
+        StatisticsReport.objects.filter(
+            admin=request.user,
+            created_at__gt=timezone.now()
+            - timedelta(days=STATISTICS_REPORT_RETENTION_DAYS),
+        ).order_by("-created_at")[:20]
+    )
+    for report in export_history:
+        try:
+            report.download_available = bool(
+                report.file_path and default_storage.exists(report.file_path)
+            )
+        except OSError:
+            logger.exception(
+                "Could not check exported statistics report %s", report.pk
+            )
+            report.download_available = False
 
+    status_breakdowns = _format_status_breakdowns(data)
     return render(
         request,
         "reports/admin_dashboard.html",
@@ -243,8 +331,41 @@ def statistics_dashboard(request):
             "period_start": period_start,
             "period_end": period_end,
             "data": data,
+            "export_history": export_history,
+            "statistic_labels": {
+                key: _statistic_label(key) for key in data if key != "report_type"
+            },
+            "status_breakdown_keys": tuple(status_breakdowns),
+            "status_breakdowns": status_breakdowns,
         },
     )
+
+
+def _format_status_breakdowns(data):
+    """Translate grouped status values into presentation-ready labels and counts."""
+    choices_by_key = {}
+    try:
+        Document = apps.get_model("documents", "Document")
+        choices_by_key.update({
+            "document_by_status": Document.Status.choices,
+            "document_by_status_period": Document.Status.choices,
+        })
+    except LookupError:
+        pass
+    choices_by_key["violation_by_status"] = ViolationReport.Status.choices
+
+    return {
+        key: [
+            {
+                "label": dict(choices_by_key[key]).get(row["status"], row["status"]),
+                "status": row["status"],
+                "total": row["total"],
+            }
+            for row in data.get(key, [])
+        ]
+        for key in choices_by_key
+        if key in data
+    }
 
 
 def _build_statistics(report_type, period_start, period_end):
@@ -255,13 +376,14 @@ def _build_statistics(report_type, period_start, period_end):
     Nếu app 'documents' chưa tồn tại trong project hiện tại (đang phát
     triển độc lập từng phần), hàm sẽ trả về dữ liệu rỗng/None thay vì lỗi.
     """
-    date_range = Q(created_at__date__gte=period_start, created_at__date__lte=period_end)
     result = {"report_type": report_type}
 
     # ---- Người dùng: luôn khả dụng vì User thuộc app accounts ----
     if report_type in (StatisticsReport.ReportType.USERS, StatisticsReport.ReportType.OVERVIEW):
         result["total_users"] = User.objects.count()
-        result["new_users"] = User.objects.filter(date_range).count() if hasattr(User, "created_at") else None
+        result["new_users"] = User.objects.filter(
+            date_joined__date__gte=period_start, date_joined__date__lte=period_end
+        ).count()
 
     # ---- Vi phạm: luôn khả dụng vì ViolationReport thuộc app reports ----
     if report_type in (StatisticsReport.ReportType.VIOLATIONS, StatisticsReport.ReportType.OVERVIEW):
@@ -282,12 +404,17 @@ def _build_statistics(report_type, period_start, period_end):
         try:
             Document = apps.get_model("documents", "Document")
             doc_qs = Document.objects.filter(
-                created_at__date__gte=period_start, created_at__date__lte=period_end
+                uploaded_at__date__gte=period_start, uploaded_at__date__lte=period_end
             )
             result["document_total"] = Document.objects.count()
             result["document_new"] = doc_qs.count()
             result["document_by_status"] = list(
                 Document.objects.values("status").annotate(total=Count("id")).order_by("status")
+            )
+            result["document_by_status_period"] = list(
+                doc_qs.values("status")
+                .annotate(total=Count("id"))
+                .order_by("status")
             )
         except LookupError:
             result["document_total"] = None
@@ -328,17 +455,62 @@ def export_statistics_report(request):
         response = _export_pdf(report_type, period_start, period_end, data)
         file_name = f"baocao_{report_type}_{period_start}_{period_end}.pdf"
 
-    # Ghi lịch sử xuất báo cáo vào bảng statistics_reports (B5)
-    StatisticsReport.objects.create(
-        admin=request.user,
-        report_type=report_type,
-        period_start=period_start,
-        period_end=period_end,
-        file_path=f"exports/{file_name}",
-    )
+    report = None
+    stored_name = None
+    try:
+        report = StatisticsReport.objects.create(
+            admin=request.user,
+            report_type=report_type,
+            period_start=period_start,
+            period_end=period_end,
+        )
+        stored_name = default_storage.save(
+            f"exports/{report.pk}/{file_name}",
+            ContentFile(response.content),
+        )
+        report.file_path = stored_name
+        report.save(update_fields=["file_path"])
+    except (OSError, DatabaseError):
+        logger.exception("Could not persist exported statistics report")
+        if stored_name:
+            default_storage.delete(stored_name)
+        if report is not None:
+            report.delete()
+        messages.error(
+            request,
+            "Không thể lưu bản xuất vào kho tệp. Báo cáo chưa được tạo; vui lòng thử lại.",
+        )
+        return redirect("reports:statistics_dashboard")
 
     response["Content-Disposition"] = f'attachment; filename="{file_name}"'
     return response
+
+
+@admin_required
+def download_statistics_report(request, pk):
+    report = get_object_or_404(StatisticsReport, pk=pk, admin=request.user)
+    if timezone.now() >= report.expires_at:
+        raise Http404("Bản xuất báo cáo đã hết hạn.")
+    if not report.file_path:
+        raise Http404("Không tìm thấy tệp báo cáo.")
+    path = PurePosixPath(report.file_path)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or path.parts[0] != "exports"
+        or any(part in (".", "..") for part in path.parts)
+    ):
+        raise Http404("Đường dẫn tệp báo cáo không hợp lệ.")
+    try:
+        file_handle = default_storage.open(report.file_path, "rb")
+    except (FileNotFoundError, OSError) as exc:
+        logger.exception("Stored statistics report %s is unavailable", report.pk)
+        raise Http404("Không tìm thấy tệp báo cáo.") from exc
+    return FileResponse(
+        file_handle,
+        as_attachment=True,
+        filename=path.name,
+    )
 
 
 def _export_xlsx(report_type, period_start, period_end, data):
@@ -359,11 +531,11 @@ def _export_xlsx(report_type, period_start, period_end, data):
         if key == "report_type":
             continue
         if isinstance(value, list):
-            ws.append([key, ""])
+            ws.append([_statistic_label(key), ""])
             for row in value:
                 ws.append(["", str(row)])
         else:
-            ws.append([key, value])
+            ws.append([_statistic_label(key), value])
 
     from io import BytesIO
 
@@ -405,16 +577,31 @@ def _export_pdf(report_type, period_start, period_end, data):
             y = height - 50
             p.setFont("Helvetica", 11)
         if isinstance(value, list):
-            p.drawString(50, y, f"{key}:")
+            p.drawString(50, y, f"{_statistic_label(key)}:")
             y -= 18
             for row in value:
                 p.drawString(70, y, f"- {row}")
                 y -= 16
         else:
-            p.drawString(50, y, f"{key}: {value}")
+            p.drawString(50, y, f"{_statistic_label(key)}: {value}")
             y -= 18
 
     p.showPage()
     p.save()
     buffer.seek(0)
     return HttpResponse(buffer.read(), content_type="application/pdf")
+
+
+def _statistic_label(key):
+    labels = {
+        "total_users": "Tổng người dùng (toàn thời gian)",
+        "new_users": "Người dùng mới (trong kỳ)",
+        "violation_total": "Báo cáo vi phạm (trong kỳ)",
+        "violation_by_status": "Phân bố trạng thái báo cáo (trong kỳ)",
+        "document_total": "Tổng tài liệu (toàn thời gian)",
+        "document_new": "Tài liệu mới (trong kỳ)",
+        "document_by_status": "Trạng thái tài liệu (toàn thời gian)",
+        "document_by_status_period": "Trạng thái tài liệu (tài liệu tạo trong kỳ)",
+        "download_total": "Lượt tải (trong kỳ)",
+    }
+    return labels.get(key, key.replace("_", " ").title())

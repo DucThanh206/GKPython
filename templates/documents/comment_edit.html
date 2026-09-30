@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Sửa bình luận - EduHub{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <a class="back-link" href="{{ comment.document.get_absolute_url }}">← Quay lại tài liệu</a>
+        <section class="edit-comment-panel">
+            <div class="eyebrow">Trao đổi học tập</div>
+            <h1 class="mt-2 mb-2">Chỉnh sửa bình luận</h1>
+            <p class="text-muted mb-4">Cập nhật nội dung phản hồi của bạn.</p>
+            <form method="post">
+                {% csrf_token %}
+                {% for field in form %}
+                    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+                {% endfor %}
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-dark" type="submit">Lưu thay đổi</button>
+                    <a class="btn btn-outline-secondary" href="{{ comment.document.get_absolute_url }}">Hủy</a>
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+<style>
+    .back-link { display: inline-block; margin: 8px 0 20px; color: var(--quiet); font-size: 13px; }
+    .edit-comment-panel { padding: clamp(22px, 4vw, 34px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .edit-comment-panel h1 { font-size: 36px; }
+    .edit-comment-panel textarea { min-height: 150px; }
+    .field-error { color: #a7473e; font-size: 12px; }
+</style>
+{% endblock %}

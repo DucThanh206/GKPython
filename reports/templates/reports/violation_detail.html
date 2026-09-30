@@ -1,56 +1,74 @@
 {% extends "base.html" %}
-
-{% block title %}Chi tiết báo cáo #{{ report.id }}{% endblock %}
-
+{% block title %}Chi tiết báo cáo #{{ report.id }} - EduHub{% endblock %}
 {% block content %}
-<div class="container" style="max-width:700px;margin-top:30px;">
-  <h2>Chi tiết báo cáo #{{ report.id }}</h2>
-
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
-    {% endfor %}
-  {% endif %}
-
-  <table class="table table-bordered">
-    <tr><th style="width:220px;">Người báo cáo</th><td>{{ report.reporter }}</td></tr>
-    <tr><th>Đối tượng bị báo cáo</th><td>{{ report.get_target_type_display }} #{{ report.target_id }}</td></tr>
-    <tr>
-      <th>Nội dung / chi tiết đối tượng</th>
-      <td>
-        {% if target %}
-          {{ target }}
-        {% else %}
-          <span class="text-muted">Không tìm thấy đối tượng (có thể đã bị xóa).</span>
-        {% endif %}
-      </td>
-    </tr>
-    <tr><th>Lý do báo cáo</th><td>{{ report.reason }}</td></tr>
-    <tr><th>Trạng thái hiện tại</th><td>{{ report.get_status_display }}</td></tr>
-    <tr><th>Ngày gửi báo cáo</th><td>{{ report.created_at|date:"d/m/Y H:i" }}</td></tr>
-    {% if report.handled_by %}
-    <tr><th>Đã xử lý bởi</th><td>{{ report.handled_by }} — {{ report.resolved_at|date:"d/m/Y H:i" }}</td></tr>
-    <tr><th>Ghi chú xử lý</th><td>{{ report.resolution_note }}</td></tr>
-    {% endif %}
-  </table>
-
-  {% if report.status == "pending" %}
-  <form method="post">
-    {% csrf_token %}
-    <div class="mb-3">
-      <label class="form-label d-block">{{ form.action.label }}</label>
-      {{ form.action }}
-      {% if form.action.errors %}<div class="text-danger small">{{ form.action.errors }}</div>{% endif %}
+<a href="{% url 'reports:violation_report_list' %}" class="back-link">← Quay lại danh sách báo cáo</a>
+<header class="report-detail-heading">
+    <div><div class="eyebrow">Báo cáo vi phạm #{{ report.id }}</div><h1 class="mt-2 mb-2">Chi tiết phản ánh</h1><p class="text-muted mb-0">Được gửi {{ report.created_at|date:"d/m/Y \l\ú\c H:i" }}</p></div>
+    <span class="status-pill {% if report.status == 'pending' %}status-waiting{% elif report.status == 'resolved' %}status-approved{% else %}status-rejected{% endif %}">{{ report.get_status_display }}</span>
+</header>
+<div class="row g-4">
+    <div class="col-lg-7">
+        <section class="report-detail-card">
+            <div class="eyebrow mb-3">Thông tin báo cáo</div>
+            <dl class="report-details">
+                <div><dt>Người báo cáo</dt><dd>{{ report.reporter }}</dd></div>
+                <div><dt>Đối tượng</dt><dd>{{ report.get_target_type_display }} #{{ report.target_id }}</dd></div>
+                <div><dt>Nội dung đối tượng</dt><dd>{% if target %}{{ target }}{% else %}<span class="text-muted">Không tìm thấy đối tượng (có thể đã bị xóa).</span>{% endif %}</dd></div>
+                <div><dt>Lý do báo cáo</dt><dd class="reason-copy">{{ report.reason }}</dd></div>
+                {% if report.handled_by %}
+                <div><dt>Đã xử lý bởi</dt><dd>{{ report.handled_by }} — {{ report.resolved_at|date:"d/m/Y H:i" }}</dd></div>
+                <div><dt>Ghi chú xử lý</dt><dd>{{ report.resolution_note|default:"Không có ghi chú." }}</dd></div>
+                {% endif %}
+            </dl>
+        </section>
     </div>
-    <div class="mb-3">
-      <label class="form-label">{{ form.note.label }}</label>
-      {{ form.note }}
+    <div class="col-lg-5">
+        <section class="report-detail-card resolution-card">
+            {% if report.status == "pending" %}
+                <div class="eyebrow">Bước tiếp theo</div>
+                <h2 class="h5 mt-2 mb-3">Xử lý báo cáo</h2>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label d-block">{{ form.action.label }}</label>
+                        {{ form.action }}
+                        {% if form.action.errors %}<div class="field-error">{{ form.action.errors }}</div>{% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>
+                        {{ form.note }}
+                        {% if form.note.errors %}<div class="field-error">{{ form.note.errors }}</div>{% endif %}
+                    </div>
+                    <button type="submit" class="btn btn-dark">Xác nhận xử lý</button>
+                </form>
+            {% else %}
+                <div class="eyebrow">Đã hoàn tất</div>
+                <h2 class="h5 mt-2">Báo cáo đã được xử lý</h2>
+                <p class="text-muted small mb-3">Cảm ơn bạn đã góp phần duy trì chất lượng nội dung.</p>
+                <a href="{% url 'reports:violation_report_list' %}" class="btn btn-outline-secondary">Quay lại danh sách</a>
+            {% endif %}
+        </section>
     </div>
-    <button type="submit" class="btn btn-primary">Xác nhận xử lý</button>
-    <a href="{% url 'reports:violation_report_list' %}" class="btn btn-secondary">Quay lại</a>
-  </form>
-  {% else %}
-    <a href="{% url 'reports:violation_report_list' %}" class="btn btn-secondary">Quay lại danh sách</a>
-  {% endif %}
 </div>
+<style>
+    .back-link { display: inline-block; margin: 8px 0 22px; color: var(--quiet); font-size: 13px; }
+    .report-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+    .report-detail-heading h1 { font-size: 38px; }
+    .report-detail-card { height: 100%; padding: clamp(20px, 4vw, 30px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .report-details { margin: 0; }
+    .report-details > div { display: grid; grid-template-columns: 155px 1fr; gap: 16px; padding: 14px 0; border-top: 1px solid rgba(0,0,0,.08); }
+    .report-details dt { color: var(--quiet); font-size: 12px; font-weight: 500; }
+    .report-details dd { margin: 0; color: var(--copy); font-size: 13px; overflow-wrap: anywhere; }
+    .reason-copy { white-space: pre-wrap; }
+    .resolution-card { height: auto; background: var(--cloud); }
+    .resolution-card ul { margin: 0; padding: 0; list-style: none; }
+    .resolution-card li { margin-bottom: 10px; font-size: 13px; }
+    .resolution-card input[type="radio"] { margin-right: 8px; }
+    .resolution-card textarea { min-height: 90px; }
+    .field-error { color: #a7473e; font-size: 12px; }
+    @media (max-width: 575.98px) {
+        .report-detail-heading h1 { font-size: 31px; }
+        .report-details > div { grid-template-columns: 1fr; gap: 4px; }
+    }
+</style>
 {% endblock %}

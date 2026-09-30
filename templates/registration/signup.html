@@ -1,11 +1,59 @@
 {% extends 'base.html' %}
-{% block title %}Đăng ký - EduHub{% endblock %}
+{% block title %}Tạo tài khoản - EduHub{% endblock %}
 {% block content %}
-<h1 class="mb-4">Tạo tài khoản</h1>
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-primary">Đăng ký</button>
-</form>
-<p class="mt-3">Đã có tài khoản? <a href="{% url 'login' %}">Đăng nhập</a></p>
+<div class="auth-layout">
+    <aside class="auth-story">
+        <div class="auth-story-mark" aria-hidden="true">H</div>
+        <div class="eyebrow">Cùng nhau xây thư viện tri thức</div>
+        <h1>Góc học tập của bạn bắt đầu từ đây.</h1>
+        <p>Tìm tài liệu hữu ích, lưu lại điều bạn cần và lan tỏa kiến thức đến cộng đồng.</p>
+        <div class="auth-story-note"><span aria-hidden="true">✳</span> Tham gia cộng đồng học tập EduHub.</div>
+    </aside>
+    <section class="auth-form-panel">
+        <div class="eyebrow">Bắt đầu miễn phí</div>
+        <h2 class="mt-2 mb-2">Tạo tài khoản</h2>
+        <p class="text-muted mb-4">Chỉ mất một phút để tham gia cộng đồng.</p>
+        <form method="post">
+            {% csrf_token %}
+            {% for field in form %}
+                <div class="auth-field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                    {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+                </div>
+            {% endfor %}
+            {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+            <button type="submit" class="btn btn-dark w-100 mt-2">Tạo tài khoản</button>
+        </form>
+        <p class="auth-switch">Đã có tài khoản? <a href="{% url 'login' %}">Đăng nhập</a></p>
+    </section>
+</div>
+<style>
+    .auth-layout { display: grid; grid-template-columns: 1fr 440px; max-width: 980px; min-height: 570px; margin: 16px auto; overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 14px; background: var(--paper); }
+    .auth-story { display: flex; flex-direction: column; justify-content: center; padding: clamp(30px, 6vw, 70px); background: var(--warm); }
+    .auth-story-mark { display: grid; width: 40px; height: 40px; margin-bottom: 52px; place-items: center; border-radius: 11px; background: var(--ink); color: white; font-weight: 700; }
+    .auth-story h1 { margin: 15px 0; font-size: clamp(2.2rem, 4vw, 3.5rem); line-height: 1.12; }
+    .auth-story p { max-width: 440px; color: var(--quiet); font-size: 14px; }
+    .auth-story-note { margin-top: 36px; color: var(--copy); font-size: 12px; }
+    .auth-story-note span { margin-right: 6px; }
+    .auth-form-panel { align-self: center; padding: 46px 42px; }
+    .auth-form-panel h2 { font-size: 32px; }
+    .auth-field { margin-bottom: 17px; }
+    .auth-field label { display: block; margin-bottom: 7px; color: var(--copy); font-size: 12px; font-weight: 600; }
+    .auth-field input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #dcd8d0; border-radius: 6px; background: var(--paper); font: 14px var(--font-ui); }
+    .auth-field input:focus { outline: 0; border-color: #928d83; box-shadow: 0 0 0 3px rgba(46,46,46,.08); }
+    .field-error { margin-top: 5px; color: #a7473e; font-size: 12px; }
+    .auth-switch { margin: 24px 0 0; color: var(--quiet); font-size: 12px; text-align: center; }
+    .auth-switch a { font-weight: 600; }
+    @media (max-width: 767.98px) {
+        .auth-layout { grid-template-columns: 1fr; max-width: 500px; min-height: 0; }
+        .auth-story { padding: 28px; }
+        .auth-story-mark { margin-bottom: 24px; }
+        .auth-story h1 { max-width: 420px; font-size: 32px; }
+        .auth-story p { margin-bottom: 0; }
+        .auth-story-note { display: none; }
+        .auth-form-panel { padding: 32px 28px; }
+    }
+</style>
 {% endblock %}

@@ -1,10 +1,65 @@
 {% extends 'base.html' %}
 {% block title %}Đăng nhập - EduHub{% endblock %}
 {% block content %}
-<h1 class="mb-4">Đăng nhập</h1>
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-primary">Đăng nhập</button>
-</form>
+<div class="auth-layout">
+    <aside class="auth-story">
+        <div class="auth-story-mark" aria-hidden="true">H</div>
+        <div class="eyebrow">Một cộng đồng học tập cởi mở</div>
+        <h1>Tri thức lớn lên khi ta cùng nhau chia sẻ.</h1>
+        <p>Đăng nhập để lưu tài liệu yêu thích, trao đổi cùng bạn học và đóng góp vào thư viện chung.</p>
+        <div class="auth-story-note"><span aria-hidden="true">✳</span> Học tập kết nối, tài liệu sẻ chia.</div>
+    </aside>
+    <section class="auth-form-panel">
+        <div class="eyebrow">Chào mừng bạn trở lại</div>
+        <h2 class="mt-2 mb-2">Đăng nhập</h2>
+        <p class="text-muted mb-4">Tiếp tục hành trình học tập của bạn.</p>
+        {% if form.errors %}<div class="alert alert-danger">Tên đăng nhập hoặc mật khẩu chưa chính xác. Vui lòng thử lại.</div>{% endif %}
+        <form method="post">
+            {% csrf_token %}
+            {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+            {% for field in form %}
+                <div class="auth-field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+                </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-dark w-100 mt-2">Đăng nhập</button>
+        </form>
+        {% if google_oauth_enabled %}
+        <div class="auth-divider"><span>hoặc tiếp tục với</span></div>
+        <a class="btn btn-outline-secondary w-100 google-button" href="{% url 'google_login' %}{% if request.GET.next %}?next={{ request.GET.next|urlencode }}{% endif %}">Google</a>
+        {% endif %}
+        <p class="auth-switch">Chưa có tài khoản? <a href="{% url 'signup' %}">Tạo tài khoản mới</a></p>
+    </section>
+</div>
+<style>
+    .auth-layout { display: grid; grid-template-columns: 1fr 440px; max-width: 980px; min-height: 570px; margin: 16px auto; overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 14px; background: var(--paper); }
+    .auth-story { display: flex; flex-direction: column; justify-content: center; padding: clamp(30px, 6vw, 70px); background: var(--warm); }
+    .auth-story-mark { display: grid; width: 40px; height: 40px; margin-bottom: 52px; place-items: center; border-radius: 11px; background: var(--ink); color: white; font-weight: 700; }
+    .auth-story h1 { margin: 15px 0; font-size: clamp(2.2rem, 4vw, 3.5rem); line-height: 1.12; }
+    .auth-story p { max-width: 440px; color: var(--quiet); font-size: 14px; }
+    .auth-story-note { margin-top: 36px; color: var(--copy); font-size: 12px; }
+    .auth-story-note span { margin-right: 6px; }
+    .auth-form-panel { align-self: center; padding: 46px 42px; }
+    .auth-form-panel h2 { font-size: 32px; }
+    .auth-field { margin-bottom: 18px; }
+    .auth-field label { display: block; margin-bottom: 7px; color: var(--copy); font-size: 12px; font-weight: 600; }
+    .auth-field input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #dcd8d0; border-radius: 6px; background: var(--paper); font: 14px var(--font-ui); }
+    .auth-field input:focus { outline: 0; border-color: #928d83; box-shadow: 0 0 0 3px rgba(46,46,46,.08); }
+    .auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--quiet); font-size: 11px; }
+    .auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: rgba(0,0,0,.1); content: ""; }
+    .google-button { background: var(--paper); }
+    .auth-switch { margin: 24px 0 0; color: var(--quiet); font-size: 12px; text-align: center; }
+    .auth-switch a { font-weight: 600; }
+    @media (max-width: 767.98px) {
+        .auth-layout { grid-template-columns: 1fr; max-width: 500px; min-height: 0; }
+        .auth-story { padding: 28px; }
+        .auth-story-mark { margin-bottom: 24px; }
+        .auth-story h1 { max-width: 420px; font-size: 32px; }
+        .auth-story p { margin-bottom: 0; }
+        .auth-story-note { display: none; }
+        .auth-form-panel { padding: 32px 28px; }
+    }
+</style>
 {% endblock %}

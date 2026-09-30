@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Hồ sơ cá nhân - EduHub{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <header class="profile-heading">
+            <div class="profile-avatar" aria-hidden="true">{{ user.full_name|default:user.username|slice:"0:1"|upper }}</div>
+            <div><div class="eyebrow">Tài khoản EduHub</div><h1 class="mt-1 mb-1">Hồ sơ cá nhân</h1><p class="text-muted mb-0">Cập nhật thông tin để cộng đồng nhận biết bạn.</p></div>
+        </header>
+        <section class="profile-surface">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                {% for field in form %}
+                    <div class="profile-field">
+                        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {{ field }}
+                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                        {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
+                    </div>
+                {% endfor %}
+                {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+                <button type="submit" class="btn btn-dark">Lưu thay đổi</button>
+            </form>
+        </section>
+        <section class="connected-account mt-3">
+            <div><strong>Đăng nhập Google</strong><p class="mb-0">{% if user.google_id %}Tài khoản Google đã được liên kết.{% else %}Liên kết để đăng nhập nhanh và an toàn hơn.{% endif %}</p></div>
+            {% if not user.google_id and google_oauth_enabled %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'google_login' %}">Liên kết Google</a>{% endif %}
+        </section>
+    </div>
+</div>
+<style>
+    .profile-heading { display: flex; align-items: center; gap: 16px; margin: 8px 0 24px; }
+    .profile-heading h1 { font-size: 36px; }
+    .profile-avatar { display: grid; flex: 0 0 58px; width: 58px; height: 58px; place-items: center; border-radius: 50%; background: var(--warm); color: var(--copy); font-family: var(--font-display); font-size: 24px; }
+    .profile-surface { padding: clamp(20px, 4vw, 34px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .profile-field { margin-bottom: 19px; }
+    .profile-field textarea { min-height: 100px; }
+    .field-error { color: #a7473e; font-size: 12px; }
+    .connected-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; background: var(--cloud); }
+    .connected-account strong { color: var(--copy); font-size: 13px; }
+    .connected-account p { margin-top: 4px; color: var(--quiet); font-size: 12px; }
+</style>
+{% endblock %}

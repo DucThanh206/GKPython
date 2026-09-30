@@ -17,7 +17,11 @@ Lưu ý (đã ghi trong schema):
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from datetime import timedelta
+
 from django.utils import timezone
+
+STATISTICS_REPORT_RETENTION_DAYS = 90
 
 
 class ViolationReport(models.Model):
@@ -125,17 +129,17 @@ class ViolationReport(models.Model):
 
         target = self.get_target()
 
-        if action == self.Action.DELETE and target is not None:
-            if self.target_type == self.TargetType.DOCUMENT and hasattr(target, "status"):
+        if action == self.Action.DELETE:
+            if target is not None and self.target_type == self.TargetType.DOCUMENT and hasattr(target, "status"):
                 target.status = "rejected"
                 target.save(update_fields=["status"])
-            elif self.target_type == self.TargetType.COMMENT and hasattr(target, "is_deleted"):
+            elif target is not None and self.target_type == self.TargetType.COMMENT and hasattr(target, "is_deleted"):
                 target.is_deleted = True
                 target.save(update_fields=["is_deleted"])
             self.status = self.Status.RESOLVED
         elif action == self.Action.WARN:
             self.status = self.Status.RESOLVED
-        else:  # KEEP
+        elif action == self.Action.KEEP:
             self.status = self.Status.REJECTED
 
         self.handled_by = admin_user
@@ -188,3 +192,7 @@ class StatisticsReport(models.Model):
 
     def __str__(self):
         return f"{self.get_report_type_display()} ({self.period_start} - {self.period_end})"
+
+    @property
+    def expires_at(self):
+        return self.created_at + timedelta(days=STATISTICS_REPORT_RETENTION_DAYS)

@@ -7,6 +7,7 @@ from .models import User
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Thông tin bổ sung', {'fields': ('avatar', 'bio')}),
+        ('Thông tin bổ sung', {'fields': ('full_name', 'school', 'role', 'google_id', 'avatar', 'bio')}),
     )
-    list_display = ('username', 'email', 'is_staff', 'is_active', 'date_joined')
+    list_display = ('username', 'email', 'role', 'is_staff', 'is_active', 'date_joined')
+    list_filter = ('role', 'is_active', 'is_staff')

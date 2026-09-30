@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -19,13 +20,49 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$ne3$f@q)(fl4+1%@^5u^8b2$o37bq06dg&rua75&j%4^cql1_'
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower()
+IS_PRODUCTION = APP_ENV == "production"
+SECRET_KEY = os.environ.get(
+    "DJANGO_SECRET_KEY",
+    "" if IS_PRODUCTION else "django-insecure-local-development-key-only",
+)
+DEBUG = os.environ.get("DJANGO_DEBUG", "false" if IS_PRODUCTION else "true").lower() in {
+    "1", "true", "yes",
+}
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get(
+        "DJANGO_ALLOWED_HOSTS", "" if IS_PRODUCTION else "localhost,127.0.0.1"
+    ).split(",")
+    if host.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
+if IS_PRODUCTION:
+    missing_settings = [
+        name
+        for name, value in (
+            ("DJANGO_SECRET_KEY", SECRET_KEY),
+            ("DJANGO_ALLOWED_HOSTS", ALLOWED_HOSTS),
+            ("MEDIA_ROOT", os.environ.get("MEDIA_ROOT")),
+            ("EMAIL_HOST", os.environ.get("EMAIL_HOST")),
+            ("ADMIN_EMAILS", os.environ.get("ADMIN_EMAILS")),
+        )
+        if not value
+    ]
+    if missing_settings:
+        raise RuntimeError(
+            "Production configuration is missing required environment values: "
+            + ", ".join(missing_settings)
+        )
+    if "*" in ALLOWED_HOSTS:
+        raise RuntimeError("DJANGO_ALLOWED_HOSTS must list explicit production hosts.")
+    if DEBUG:
+        raise RuntimeError("DJANGO_DEBUG must be false in production.")
 
 
 # Application definition
@@ -80,12 +117,41 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+if IS_PRODUCTION or os.environ.get("DB_ENGINE") == "django.db.backends.postgresql":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ.get("DB_NAME", ""),
+            "USER": os.environ.get("DB_USER", ""),
+            "PASSWORD": os.environ.get("DB_PASSWORD", ""),
+            "HOST": os.environ.get("DB_HOST", ""),
+            "PORT": os.environ.get("DB_PORT", "5432"),
+            "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
+        }
     }
-}
+    if IS_PRODUCTION:
+        missing_database = [
+            name
+            for name, value in (
+                ("DB_NAME", DATABASES["default"]["NAME"]),
+                ("DB_USER", DATABASES["default"]["USER"]),
+                ("DB_PASSWORD", DATABASES["default"]["PASSWORD"]),
+                ("DB_HOST", DATABASES["default"]["HOST"]),
+            )
+            if not value
+        ]
+        if missing_database:
+            raise RuntimeError(
+                "Production database configuration is missing: "
+                + ", ".join(missing_database)
+            )
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 # Password validation
@@ -123,11 +189,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
+STATIC_ROOT = Path(os.environ.get("STATIC_ROOT", BASE_DIR / "staticfiles"))
+STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
 
 # File tài liệu người dùng tải lên
 MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / 'media'))
+MAX_DOCUMENT_UPLOAD_SIZE = int(
+    os.environ.get("MAX_DOCUMENT_UPLOAD_SIZE", str(25 * 1024 * 1024))
+)
+DATA_UPLOAD_MAX_MEMORY_SIZE = MAX_DOCUMENT_UPLOAD_SIZE + 1024 * 1024
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'document_list'
@@ -137,9 +208,38 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # Email
-ADMINS = [("Admin", "admin@example.com")]
-DEFAULT_FROM_EMAIL = "no-reply@thuvien.com"
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+ADMIN_EMAILS = [
+    email.strip()
+    for email in os.environ.get("ADMIN_EMAILS", "admin@example.com").split(",")
+    if email.strip()
+]
+ADMINS = [(email, email) for email in ADMIN_EMAILS]
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-reply@thuvien.com")
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if IS_PRODUCTION
+    else os.environ.get(
+        "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+    )
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in {
+    "1", "true", "yes",
+}
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() in {
+    "1", "true", "yes",
+}
+if EMAIL_USE_SSL and EMAIL_USE_TLS:
+    raise RuntimeError("Enable only one of EMAIL_USE_SSL or EMAIL_USE_TLS.")
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
+GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
+    'GOOGLE_OAUTH_REDIRECT_URI',
+    'http://127.0.0.1:8000/accounts/google/callback/',
+)
 
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 
@@ -148,3 +248,13 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+if IS_PRODUCTION:
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True

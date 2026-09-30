@@ -23,4 +23,9 @@ urlpatterns = [
     # UC14 - Thống kê, báo cáo (Admin)
     path("stats/", views.statistics_dashboard, name="statistics_dashboard"),
     path("stats/export/", views.export_statistics_report, name="export_statistics_report"),
+    path(
+        "stats/history/<int:pk>/download/",
+        views.download_statistics_report,
+        name="download_statistics_report",
+    ),
 ]

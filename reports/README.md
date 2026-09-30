@@ -31,20 +31,16 @@ App Django này hiện thực đầy đủ 3 use case được giao:
    ```python
    ADMINS = [("Admin", "admin@example.com")]
    DEFAULT_FROM_EMAIL = "no-reply@thuvien.com"
-   # Dev: in email ra console thay vì gửi thật
-   EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+   # Development mặc định in email ra console; production dùng SMTP qua biến môi trường.
    ```
 
 ## 2. Phụ thuộc vào app khác (quan trọng)
 
 - `settings.AUTH_USER_MODEL` phải trỏ tới model User của app `accounts`
   (map bảng `users` — có cột `role` ENUM('member','admin') dùng để phân quyền Admin trong `decorators.py`).
-- Model `Document` và `Comment` được tham chiếu **lỏng** qua
-  `django.apps.apps.get_model("documents", "Document"/"Comment")` — nếu app
-  `documents` của bạn cùng nhóm chưa sẵn sàng, các chức năng liên quan (xem
-  chi tiết đối tượng bị báo cáo, gỡ tài liệu vi phạm, thống kê tài liệu/lượt
-  tải) sẽ tự động trả về "không có dữ liệu" thay vì lỗi crash — bạn có thể
-  phát triển độc lập và tích hợp sau.
+- Model `Document` và `Comment` được tra cứu qua registry Django để tránh
+  import vòng. Các luồng báo cáo, kiểm duyệt và thống kê đã được nối với app
+  `documents` trong project.
 - Cần base template `templates/base.html` (đã có sẵn theo cấu trúc project) với các block `title`, `content`.
 
 ## 3. Database
@@ -63,32 +59,57 @@ App Django này hiện thực đầy đủ 3 use case được giao:
   python manage.py migrate reports
   ```
 
-## 4. Cài thêm thư viện xuất báo cáo (UC14)
+## 4. Xuất báo cáo (UC14)
+
+Các thư viện `openpyxl` và `reportlab` đã được khai báo trong
+`requirements.txt`; cài đặt chúng cùng các phụ thuộc khác bằng
+`pip install -r requirements.txt`.
+
+Các tệp xuất được lưu riêng trong `MEDIA_ROOT/exports/`, chỉ Admin tạo báo cáo
+mới có thể tải lại. Bản xuất hết hạn sau 90 ngày. Lên lịch chạy lệnh sau mỗi
+ngày để xóa tệp và bản ghi đã hết hạn:
 
 ```bash
-pip install openpyxl reportlab
-```
-Thêm vào `requirements.txt`:
-```
-openpyxl>=3.1
-reportlab>=4.0
+python manage.py purge_expired_statistics_reports
 ```
 
-## 5. Cách gọi UC08 từ trang tài liệu / bình luận (do teammate phụ trách `documents` tích hợp)
+Lưu ý: thư mục media cần nằm trên persistent storage được sao lưu; không phục vụ
+`media/` trực tiếp qua web server.
 
-```html
-<!-- Trong template chi tiết tài liệu -->
-<a href="{% url 'reports:report_violation' 'document' document.id %}" class="btn btn-outline-danger">
-  Báo cáo vi phạm
-</a>
+## 5. Cấu hình production
 
-<!-- Trong template bình luận -->
-<a href="{% url 'reports:report_violation' 'comment' comment.id %}" class="btn btn-sm btn-link text-danger">
-  Báo cáo
-</a>
+Production bắt buộc đặt `APP_ENV=production`, `DJANGO_SECRET_KEY`,
+`DJANGO_ALLOWED_HOSTS`, `MEDIA_ROOT`, `EMAIL_HOST` và `ADMIN_EMAILS` (danh sách
+email phân tách bằng dấu phẩy). `DJANGO_DEBUG` phải là
+`false`. Cơ sở dữ liệu dùng PostgreSQL và cần các biến `DB_NAME`, `DB_USER`,
+`DB_PASSWORD`, `DB_HOST` (có thể đặt `DB_PORT`, mặc định `5432`). Email SMTP
+hỗ trợ `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`,
+`EMAIL_USE_SSL` và `DEFAULT_FROM_EMAIL`. Không lưu bí mật trong Git.
+
+Ví dụ chuỗi triển khai sau khi cấu hình môi trường và cài `requirements.txt`:
+
+```bash
+python manage.py check --deploy
+python manage.py migrate
+python manage.py collectstatic --noinput
 ```
 
-## 6. Điểm khớp với đặc tả (UseCase_UC08_UC09_UC14.docx)
+Đặt `STATIC_ROOT` và `MEDIA_ROOT` lên volumes bền vững/được sao lưu; cấu hình
+reverse proxy giới hạn request body tối đa theo `MAX_DOCUMENT_UPLOAD_SIZE`
+(mặc định 25 MiB) cùng phần overhead multipart. Giới hạn ứng dụng cho phép
+PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT, Markdown và CSV. Bật TLS ở reverse
+proxy và thiết lập `DJANGO_CSRF_TRUSTED_ORIGINS` cho các origin HTTPS của hệ
+thống. Sao lưu và thử khôi phục cả PostgreSQL lẫn media trước phát hành.
+Reverse proxy phải ghi đè `X-Forwarded-Proto` bằng scheme thực của kết nối;
+không để client bên ngoài tự gửi giá trị header này tới ứng dụng.
+
+## 6. UC08 đã tích hợp trong trang tài liệu và bình luận
+
+Người dùng đã đăng nhập có thể chọn **Báo cáo vi phạm** trên tài liệu hoặc
+**Báo cáo** trên bình luận. Tài khoản quản trị viên xử lý báo cáo tại trang
+quản lý báo cáo.
+
+## 7. Điểm khớp với đặc tả (UseCase_UC08_UC09_UC14.docx)
 
 - **UC08**: mỗi bước B1–B6 trong luồng sự kiện chính đều có comment tương
   ứng trực tiếp trong `views.report_violation`.
@@ -100,10 +121,9 @@ reportlab>=4.0
   của cột `statistics_reports.report_type`. Xuất báo cáo hỗ trợ cả Excel
   (`openpyxl`) và PDF (`reportlab`) đúng như đặc tả "Tạo file báo cáo (PDF/Excel)".
 
-## 7. Việc còn cần làm khi merge vào file .docx chung
+## 8. Hoàn thiện đặc tả nhóm
 
 - Đổi số thứ tự mục/hình từ placeholder (2.3.9, 2.3.10, 2.3.15) sang số thật
   theo thứ tự cuối cùng của nhóm.
 - Đối chiếu lại phần "loại thống kê" trong UC14 (`_build_statistics()`) với
-  đúng những chỉ số mà `documents` app của nhóm thực sự có (view_count,
-  download_count, ...) trước khi chốt bản đặc tả.
+  các chỉ số cuối cùng nhóm muốn đưa vào bản đặc tả.

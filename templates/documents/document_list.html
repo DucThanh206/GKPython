@@ -1,44 +1,131 @@
 {% extends 'base.html' %}
-{% block title %}Danh sách tài liệu - EduHub{% endblock %}
+{% block title %}Khám phá tài liệu - EduHub{% endblock %}
 {% block content %}
-<h1 class="mb-4">Tài liệu học tập</h1>
-
-<form method="get" class="mb-4 d-flex">
-    <input type="text" name="q" class="form-control me-2" placeholder="Tìm theo tiêu đề..." value="{{ request.GET.q }}">
-    <button class="btn btn-primary" type="submit">Tìm</button>
-</form>
-
-<div class="row row-cols-1 row-cols-md-3 g-4">
-    {% for document in documents %}
-    <div class="col">
-        <div class="card h-100">
-            <div class="card-body">
-                <h5 class="card-title">{{ document.title }}</h5>
-                <p class="card-text text-muted">{{ document.category|default:"Chưa phân loại" }}</p>
-                <p class="card-text">{{ document.description|truncatewords:20 }}</p>
-                <a href="{% url 'document_detail' document.pk %}" class="btn btn-sm btn-outline-primary">Xem chi tiết</a>
-            </div>
-            <div class="card-footer text-muted small">
-                Đăng bởi {{ document.uploader.username }} - {{ document.uploaded_at|date:"d/m/Y" }}
-            </div>
+<section class="catalog-hero mb-4">
+    <div class="eyebrow mb-3">Thư viện học tập cộng đồng</div>
+    <div class="row align-items-end g-4">
+        <div class="col-lg-7">
+            <h1 class="mb-3">Tri thức tốt hơn khi được chia sẻ.</h1>
+            <p class="lead mb-0">Khám phá giáo trình, ghi chú và tài liệu học tập được cộng đồng sinh viên tuyển chọn.</p>
+        </div>
+        <div class="col-lg-5 d-flex justify-content-lg-end">
+            {% if user.is_authenticated %}
+                <a href="{% url 'document_upload' %}" class="btn btn-dark">＋ Chia sẻ tài liệu</a>
+            {% else %}
+                <a href="{% url 'signup' %}" class="btn btn-dark">Tham gia cộng đồng <span aria-hidden="true">→</span></a>
+            {% endif %}
         </div>
     </div>
+</section>
+
+<form method="get" class="catalog-search mb-5" role="search">
+    <label class="visually-hidden" for="document-search">Tìm tài liệu</label>
+    <div class="search-field">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="document-search" type="search" name="q" placeholder="Tìm tài liệu, môn học hoặc chủ đề..." value="{{ request.GET.q }}">
+    </div>
+    <label class="visually-hidden" for="document-category">Danh mục</label>
+    <select id="document-category" name="category">
+        <option value="">Tất cả danh mục</option>
+        {% for category in categories %}
+            <option value="{{ category.slug }}" {% if request.GET.category == category.slug %}selected{% endif %}>{{ category.name }}</option>
+        {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-dark">Tìm kiếm</button>
+</form>
+{% if search_empty %}<div class="alert alert-warning">Vui lòng nhập từ khóa tìm kiếm.</div>{% endif %}
+
+<div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+    <div>
+        <div class="eyebrow">Bộ sưu tập cộng đồng</div>
+        <h2 class="section-heading mt-1">Tài liệu mới nhất</h2>
+    </div>
+    {% if is_paginated %}<span class="text-muted small">{{ page_obj.paginator.count }} tài liệu</span>{% endif %}
+</div>
+
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+    {% for document in documents %}
+    <div class="col">
+        <article class="document-card h-100">
+            <div class="document-card-top">
+                <span class="document-symbol" aria-hidden="true">▤</span>
+            </div>
+            <div class="document-card-body">
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <span class="category-label">{{ document.category|default:"Chưa phân loại" }}</span>
+                    {% if document.subject %}<span class="subject-label">{{ document.subject }}</span>{% endif %}
+                </div>
+                <h3 class="document-card-title"><a href="{% url 'document_detail' document.pk %}">{{ document.title }}</a></h3>
+                <p class="document-card-description">{{ document.description|default:"Chưa có mô tả cho tài liệu này."|truncatewords:24 }}</p>
+            </div>
+            <div class="document-card-footer">
+                <div class="author-mark" aria-hidden="true">{{ document.uploader.username|slice:"0:1"|upper }}</div>
+                <div class="author-info">
+                    <span>{{ document.uploader.full_name|default:document.uploader.username }}</span>
+                    <small>{{ document.uploaded_at|date:"d/m/Y" }}</small>
+                </div>
+                <a class="card-arrow" href="{% url 'document_detail' document.pk %}" aria-label="Xem {{ document.title }}">→</a>
+            </div>
+        </article>
+    </div>
     {% empty %}
-    <p>Chưa có tài liệu nào.</p>
+    <div class="col-12">
+        <div class="empty-state">
+            <span class="empty-state-mark" aria-hidden="true">⌕</span>
+            <h3 class="h5 mb-2">{% if request.GET.q %}Chưa tìm thấy tài liệu phù hợp{% else %}Thư viện đang chờ tài liệu đầu tiên{% endif %}</h3>
+            <p class="text-muted mb-0">{% if request.GET.q %}Thử từ khóa khác hoặc chọn một danh mục rộng hơn.{% else %}Hãy quay lại sau hoặc chia sẻ tài liệu học tập đầu tiên của bạn.{% endif %}</p>
+        </div>
+    </div>
     {% endfor %}
 </div>
 
 {% if is_paginated %}
-<nav class="mt-4">
-    <ul class="pagination">
+<nav class="mt-4" aria-label="Phân trang tài liệu">
+    <ul class="pagination justify-content-center">
         {% if page_obj.has_previous %}
-        <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}">«</a></li>
+        <li class="page-item"><a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}">← Trước</a></li>
         {% endif %}
-        <li class="page-item disabled"><span class="page-link">Trang {{ page_obj.number }}/{{ page_obj.paginator.num_pages }}</span></li>
+        <li class="page-item disabled"><span class="page-link">Trang {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
         {% if page_obj.has_next %}
-        <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}">»</a></li>
+        <li class="page-item"><a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}">Tiếp →</a></li>
         {% endif %}
     </ul>
 </nav>
 {% endif %}
+
+<style>
+    .catalog-hero { padding: 24px 0 10px; }
+    .catalog-hero h1 { max-width: 760px; font-size: clamp(2.7rem, 6vw, 4.3rem); letter-spacing: -.06em; line-height: 1.08; }
+    .catalog-hero .lead { max-width: 620px; color: var(--quiet); font-size: 17px; line-height: 1.65; }
+    .catalog-search { display: flex; align-items: center; gap: 8px; padding: 10px; border: 1px solid rgba(0,0,0,.08); border-radius: 12px; background: var(--cloud); }
+    .search-field { display: flex; flex: 1; align-items: center; min-width: 180px; gap: 10px; padding: 0 10px; }
+    .search-icon { color: var(--quiet); font-size: 24px; line-height: 1; }
+    .search-field input { width: 100%; height: 42px; border: 0; outline: 0; background: transparent; color: var(--ink); font: 14px var(--font-ui); }
+    .catalog-search select { width: 210px; height: 42px; padding: 0 32px 0 12px; border: 1px solid #dedad2; border-radius: 6px; background: var(--paper); color: var(--copy); font: 13px var(--font-ui); }
+    .document-card { display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); transition: border-color .16s ease, transform .16s ease; }
+    .document-card:hover { transform: translateY(-2px); border-color: #c9c4bb; }
+    .document-card-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 0; }
+    .document-symbol { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 10px; background: var(--warm); color: var(--copy); font-size: 20px; }
+    .status-chip, .category-label, .subject-label { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+    .status-pending { background: #faf2dc; color: #775b19; }
+    .category-label { background: var(--cloud); color: var(--copy); }
+    .subject-label { background: #edf2f8; color: #506781; }
+    .document-card-body { flex: 1; padding: 18px 20px 20px; }
+    .document-card-title { margin: 0 0 8px; font-family: var(--font-ui); font-size: 18px; font-weight: 600; letter-spacing: -.025em; line-height: 1.4; }
+    .document-card-title a { color: var(--ink); }
+    .document-card-title a:hover { color: var(--link); }
+    .document-card-description { display: -webkit-box; min-height: 48px; margin: 0; overflow: hidden; color: var(--quiet); font-size: 13px; line-height: 1.65; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .document-card-footer { display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-top: 1px solid rgba(0,0,0,.07); }
+    .author-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--board); color: var(--copy); font-size: 12px; font-weight: 600; }
+    .author-info { display: flex; flex: 1; flex-direction: column; color: var(--copy); font-size: 12px; line-height: 1.4; }
+    .author-info small { color: var(--quiet); font-size: 11px; }
+    .card-arrow { color: var(--quiet); font-size: 20px; }
+    .card-arrow:hover { color: var(--ink); }
+    @media (max-width: 575.98px) {
+        .catalog-search { align-items: stretch; flex-direction: column; }
+        .search-field { min-height: 42px; }
+        .catalog-search select { width: 100%; }
+        .catalog-hero { padding-top: 8px; }
+    }
+</style>
 {% endblock %}

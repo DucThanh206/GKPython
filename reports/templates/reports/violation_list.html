@@ -1,67 +1,52 @@
 {% extends "base.html" %}
 {% load reports_extras %}
-
-{% block title %}Quản lý báo cáo vi phạm{% endblock %}
-
+{% block title %}Quản lý báo cáo vi phạm - EduHub{% endblock %}
 {% block content %}
-<div class="container" style="margin-top:30px;">
-  <h2>Quản lý báo cáo vi phạm</h2>
-
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-{{ message.tags }}">{{ message }}</div>
-    {% endfor %}
-  {% endif %}
-
-  <ul class="nav nav-tabs mb-3">
-    {% for value, label in status_choices %}
-      <li class="nav-item">
-        <a class="nav-link {% if current_status == value %}active{% endif %}"
-           href="?status={{ value }}">
-          {{ label }} ({{ status_counts|get_item:value }})
-        </a>
-      </li>
-    {% endfor %}
-  </ul>
-
-  <table class="table table-striped">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Đối tượng</th>
-        <th>Người báo cáo</th>
-        <th>Lý do</th>
-        <th>Trạng thái</th>
-        <th>Ngày tạo</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for report in reports %}
-      <tr>
-        <td>{{ report.id }}</td>
-        <td>{{ report.get_target_type_display }} #{{ report.target_id }}</td>
-        <td>{{ report.reporter }}</td>
-        <td>{{ report.reason|truncatechars:60 }}</td>
-        <td>
-          <span class="badge
-            {% if report.status == 'pending' %}bg-warning
-            {% elif report.status == 'resolved' %}bg-success
-            {% else %}bg-secondary{% endif %}">
-            {{ report.get_status_display }}
-          </span>
-        </td>
-        <td>{{ report.created_at|date:"d/m/Y H:i" }}</td>
-        <td>
-          <a href="{% url 'reports:violation_report_detail' report.id %}" class="btn btn-sm btn-primary">
-            Xem chi tiết
-          </a>
-        </td>
-      </tr>
-      {% empty %}
-      <tr><td colspan="7" class="text-center text-muted">Không có báo cáo nào.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<header class="admin-page-heading">
+    <div><div class="eyebrow">Điều hành cộng đồng</div><h1 class="mt-2 mb-2">Báo cáo vi phạm</h1><p class="text-muted mb-0">Xem xét phản ánh và hỗ trợ môi trường học tập an toàn.</p></div>
+    <span class="admin-page-icon" aria-hidden="true">⚑</span>
+</header>
+<section class="report-workspace">
+    <ul class="nav nav-tabs">
+        {% for value, label in status_choices %}
+        <li class="nav-item">
+            <a class="nav-link {% if current_status == value %}active{% endif %}" href="?status={{ value }}">
+                {{ label }} <span class="tab-count">{{ status_counts|get_item:value|default:0 }}</span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    <div class="table-responsive report-table">
+        <table class="table">
+            <thead><tr><th>#</th><th>Đối tượng</th><th>Người báo cáo</th><th>Lý do</th><th>Trạng thái</th><th>Ngày gửi</th><th></th></tr></thead>
+            <tbody>
+            {% for report in reports %}
+            <tr>
+                <td class="text-muted">{{ report.id }}</td>
+                <td>{{ report.get_target_type_display }} #{{ report.target_id }}</td>
+                <td>{{ report.reporter }}</td>
+                <td class="report-reason">{{ report.reason|truncatechars:60 }}</td>
+                <td><span class="status-pill {% if report.status == 'pending' %}status-waiting{% elif report.status == 'resolved' %}status-approved{% else %}status-rejected{% endif %}">{{ report.get_status_display }}</span></td>
+                <td>{{ report.created_at|date:"d/m/Y H:i" }}</td>
+                <td><a href="{% url 'reports:violation_report_detail' report.id %}" class="btn btn-sm btn-outline-secondary">Xem chi tiết</a></td>
+            </tr>
+            {% empty %}<tr><td colspan="7" class="empty-table-message">Không có báo cáo nào trong danh sách này.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+<style>
+    .admin-page-heading { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 27px; }
+    .admin-page-heading h1 { font-size: 38px; }
+    .admin-page-icon { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 14px; background: var(--warm); color: var(--copy); font-size: 20px; }
+    .report-workspace { overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .report-workspace .nav-tabs { padding: 0 14px; background: var(--cloud); }
+    .report-workspace .nav-tabs .nav-link { padding: 13px 14px; font-size: 13px; }
+    .tab-count { display: inline-block; min-width: 20px; margin-left: 3px; padding: 1px 5px; border-radius: 9999px; background: var(--paper); color: var(--quiet); font-size: 10px; text-align: center; }
+    .report-table { border: 0; border-radius: 0; }
+    .report-table .table { min-width: 850px; }
+    .report-reason { max-width: 260px; }
+    .empty-table-message { padding: 38px !important; color: var(--quiet) !important; text-align: center; }
+    @media (max-width: 575.98px) { .admin-page-heading h1 { font-size: 31px; } }
+</style>
 {% endblock %}

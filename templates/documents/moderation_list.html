@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Kiểm duyệt tài liệu - EduHub{% endblock %}
+{% block content %}
+<header class="admin-page-heading">
+    <div><div class="eyebrow">Điều hành cộng đồng</div><h1 class="mt-2 mb-2">Kiểm duyệt tài liệu</h1><p class="text-muted mb-0">Rà soát nội dung trước khi chia sẻ với cộng đồng học tập.</p></div>
+    <span class="admin-page-icon" aria-hidden="true">✓</span>
+</header>
+<div class="admin-workspace">
+    <ul class="nav nav-tabs mb-0">
+        {% for value, label in status_choices %}
+        <li class="nav-item"><a class="nav-link {% if current_status == value %}active{% endif %}" href="?status={{ value }}">{{ label }}</a></li>
+        {% endfor %}
+    </ul>
+    <div class="table-responsive moderation-table">
+        <table class="table">
+            <thead><tr><th>Tài liệu</th><th>Người đăng</th><th>Danh mục</th><th>Ngày gửi</th><th>Trạng thái</th><th>Quyết định</th></tr></thead>
+            <tbody>
+            {% for document in documents %}
+            <tr>
+                <td><a class="table-primary-link" href="{% url 'document_detail' document.pk %}">{{ document.title }}</a></td>
+                <td>{{ document.uploader.full_name|default:document.uploader.username }}</td>
+                <td>{{ document.category|default:"—" }}</td>
+                <td>{{ document.uploaded_at|date:"d/m/Y H:i" }}</td>
+                <td><span class="status-pill {% if document.status == 'approved' %}status-approved{% elif document.status == 'pending' %}status-waiting{% else %}status-rejected{% endif %}">{{ document.get_status_display }}</span></td>
+                <td><form method="post" action="{% url 'moderate_document' document.pk %}" class="d-flex gap-1">
+                    {% csrf_token %}
+                    {% if document.status != 'approved' %}<button class="btn btn-sm btn-success" name="status" value="approved">Duyệt</button>{% endif %}
+                    {% if document.status != 'rejected' %}<button class="btn btn-sm btn-outline-danger" name="status" value="rejected">Gỡ bỏ</button>{% endif %}
+                </form></td>
+            </tr>
+            {% empty %}<tr><td colspan="6" class="empty-table-message">Không có tài liệu cần xử lý trong danh mục này.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<style>
+    .admin-page-heading { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 28px; }
+    .admin-page-heading h1 { font-size: 38px; }
+    .admin-page-icon { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 14px; background: var(--warm); color: var(--copy); font-size: 22px; }
+    .admin-workspace { overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .admin-workspace .nav-tabs { padding: 0 16px; background: var(--cloud); }
+    .admin-workspace .nav-tabs .nav-link { padding: 13px 14px; font-size: 13px; }
+    .moderation-table { border: 0; border-radius: 0; }
+    .moderation-table .table { min-width: 760px; }
+    .table-primary-link { color: var(--ink); font-weight: 600; }
+    .table-primary-link:hover { color: var(--link); }
+    .empty-table-message { padding: 38px !important; color: var(--quiet) !important; text-align: center; }
+    @media (max-width: 575.98px) { .admin-page-heading h1 { font-size: 32px; } }
+</style>
+{% endblock %}

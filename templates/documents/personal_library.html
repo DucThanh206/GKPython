@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Thư viện của tôi - EduHub{% endblock %}
+{% block content %}
+<header class="library-heading">
+    <div class="eyebrow">Không gian cá nhân</div>
+    <h1 class="mt-2 mb-2">Thư viện của tôi</h1>
+    <p class="text-muted mb-0">Tài liệu đã lưu, đã tải xuống và những đóng góp của bạn.</p>
+</header>
+
+{% for heading, entries in sections %}
+    <section class="library-section">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="section-heading mb-0">{{ heading }}</h2>
+            <span class="library-count">{{ entries|length }}</span>
+        </div>
+        <div class="library-list">
+            {% for entry in entries %}
+            <article class="library-item">
+                <span class="library-document-mark" aria-hidden="true">▤</span>
+                <div class="library-item-copy">
+                    <a class="library-title" href="{{ entry.document.get_absolute_url }}">{{ entry.document.title }}</a>
+                    <span>{{ entry.document.category|default:"Chưa phân loại" }}{% if entry.document.subject %} · {{ entry.document.subject }}{% endif %}</span>
+                </div>
+                <form method="post" action="{% url 'remove_library_entry' entry.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-outline-secondary" type="submit">Xóa khỏi thư viện</button>
+                </form>
+            </article>
+            {% empty %}
+            <div class="library-empty">Chưa có tài liệu trong mục này. <a href="{% url 'document_list' %}">Khám phá thư viện</a></div>
+            {% endfor %}
+        </div>
+    </section>
+{% endfor %}
+
+<section class="library-section">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="section-heading mb-0">Tài liệu đã tải lên</h2>
+        <span class="library-count">{{ uploaded|length }}</span>
+    </div>
+    <div class="library-list">
+        {% for document in uploaded %}
+        <article class="library-item">
+            <span class="library-document-mark" aria-hidden="true">↑</span>
+            <div class="library-item-copy">
+                <a class="library-title" href="{{ document.get_absolute_url }}">{{ document.title }}</a>
+                <span>{{ document.category|default:"Chưa phân loại" }} · {{ document.uploaded_at|date:"d/m/Y" }}</span>
+            </div>
+            <span class="status-pill {% if document.status == 'approved' %}status-approved{% elif document.status == 'pending' %}status-waiting{% else %}status-rejected{% endif %}">{{ document.get_status_display }}</span>
+        </article>
+        {% empty %}
+        <div class="library-empty">Bạn chưa chia sẻ tài liệu nào. <a href="{% url 'document_upload' %}">Tải tài liệu đầu tiên</a></div>
+        {% endfor %}
+    </div>
+</section>
+
+<style>
+    .library-heading { margin-bottom: 34px; }
+    .library-heading h1 { font-size: 40px; }
+    .library-section { margin-top: 32px; }
+    .library-count { display: inline-grid; min-width: 25px; height: 25px; padding: 0 7px; place-items: center; border-radius: 9999px; background: var(--cloud); color: var(--quiet); font-size: 11px; }
+    .library-list { overflow: hidden; border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
+    .library-item { display: flex; align-items: center; gap: 13px; padding: 15px 18px; }
+    .library-item + .library-item { border-top: 1px solid rgba(0,0,0,.08); }
+    .library-document-mark { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border-radius: 9px; background: var(--warm); color: var(--copy); }
+    .library-item-copy { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+    .library-title { overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .library-title:hover { color: var(--link); }
+    .library-item-copy > span { color: var(--quiet); font-size: 11px; }
+    .library-empty { padding: 22px 18px; color: var(--quiet); font-size: 13px; }
+    .status-pill { flex: 0 0 auto; padding: 5px 8px; border-radius: 5px; font-size: 11px; font-weight: 600; }
+    .status-approved { background: #edf4ed; color: #42644a; }
+    .status-waiting { background: #faf2dc; color: #775b19; }
+    .status-rejected { background: #fbefed; color: #985148; }
+    @media (max-width: 575.98px) {
+        .library-item { flex-wrap: wrap; }
+        .library-item-copy { flex-basis: calc(100% - 55px); }
+        .library-item form, .library-item > .status-pill { margin-left: 51px; }
+    }
+</style>
+{% endblock %}
