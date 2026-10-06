@@ -1,43 +1,147 @@
 {% extends 'base.html' %}
 {% block title %}Hồ sơ cá nhân - EduHub{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
+
         <header class="profile-heading">
-            <div class="profile-avatar" aria-hidden="true">{{ user.full_name|default:user.username|slice:"0:1"|upper }}</div>
-            <div><div class="eyebrow">Tài khoản EduHub</div><h1 class="mt-1 mb-1">Hồ sơ cá nhân</h1><p class="text-muted mb-0">Cập nhật thông tin để cộng đồng nhận biết bạn.</p></div>
+            <div class="profile-avatar-wrapper" data-bs-toggle="modal" data-bs-target="#avatarModal" title="Xem hoặc thay đổi ảnh đại diện">
+                <div class="profile-avatar" id="main-avatar-display">
+                    {% if form.instance.avatar %}
+                        <img src="{{ form.instance.avatar.url }}" alt="Avatar" class="avatar-img">
+                    {% else %}
+                        <span>{{ user.full_name|default:user.username|slice:"0:1"|upper }}</span>
+                    {% endif %}
+                </div>
+                <div class="avatar-overlay">📷 Đổi ảnh</div>
+            </div>
+
+            <div>
+                <div class="eyebrow">Tài khoản EduHub</div>
+                <h1 class="mt-1 mb-1">Hồ sơ cá nhân</h1>
+                <p class="text-muted mb-0">Cập nhật thông tin để cộng đồng nhận biết bạn.</p>
+            </div>
         </header>
-        <section class="profile-surface">
-            <form method="post" enctype="multipart/form-data">
+
+        <section class="profile-surface mb-4">
+            <form method="post" enctype="multipart/form-data" id="profile-form">
                 {% csrf_token %}
+
+                <input type="file" name="avatar" id="hidden-avatar-input" accept="image/*" style="display: none;">
+                <input type="checkbox" name="avatar-clear" id="hidden-avatar-clear" style="display: none;">
+
                 {% for field in form %}
-                    <div class="profile-field">
-                        <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-                        {{ field }}
-                        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
-                        {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
-                    </div>
+                    {% if field.name != 'avatar' %}
+                        <div class="profile-field mb-3">
+                            <label class="form-label fw-bold" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                            {{ field }}
+                            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                            {% if field.errors %}<div class="field-error text-danger">{{ field.errors }}</div>{% endif %}
+                        </div>
+                    {% endif %}
                 {% endfor %}
+
                 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-                <button type="submit" class="btn btn-dark">Lưu thay đổi</button>
+                <button type="submit" class="btn btn-dark mt-2">Lưu thay đổi</button>
             </form>
         </section>
-        <section class="connected-account mt-3">
-            <div><strong>Đăng nhập Google</strong><p class="mb-0">{% if user.google_id %}Tài khoản Google đã được liên kết.{% else %}Liên kết để đăng nhập nhanh và an toàn hơn.{% endif %}</p></div>
-            {% if not user.google_id and google_oauth_enabled %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'google_login' %}">Liên kết Google</a>{% endif %}
+
+        <section class="connected-account mb-4 p-3 border rounded bg-light">
+            <div>
+                <strong>Mật khẩu & Bảo mật</strong>
+                <p class="mb-0 text-muted">Thay đổi mật khẩu đăng nhập để bảo vệ tài khoản của bạn.</p>
+            </div>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'password_change' %}">Đổi mật khẩu</a>
         </section>
+
     </div>
 </div>
+
+<div class="modal fade" id="avatarModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-light border-0">
+        <h5 class="modal-title fw-bold">Ảnh đại diện</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center pb-4">
+         <div class="mb-4 d-flex justify-content-center">
+             {% if form.instance.avatar %}
+                <img id="modal-avatar-preview" src="{{ form.instance.avatar.url }}" class="img-fluid rounded" style="max-height: 400px; object-fit: contain;">
+             {% else %}
+                <div id="modal-avatar-preview" class="d-flex align-items-center justify-content-center rounded-circle" style="width: 200px; height: 200px; background: var(--warm); color: var(--copy); font-size: 80px; font-family: var(--font-display);">
+                    {{ user.full_name|default:user.username|slice:"0:1"|upper }}
+                </div>
+             {% endif %}
+         </div>
+
+         <div class="d-grid gap-2 col-8 mx-auto">
+             <button type="button" class="btn btn-primary fw-bold" id="btn-trigger-upload">📷 Tải ảnh mới lên</button>
+             {% if form.instance.avatar %}
+                <button type="button" class="btn btn-outline-danger" id="btn-trigger-remove">🗑️ Gỡ ảnh hiện tại</button>
+             {% endif %}
+         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <style>
     .profile-heading { display: flex; align-items: center; gap: 16px; margin: 8px 0 24px; }
     .profile-heading h1 { font-size: 36px; }
-    .profile-avatar { display: grid; flex: 0 0 58px; width: 58px; height: 58px; place-items: center; border-radius: 50%; background: var(--warm); color: var(--copy); font-family: var(--font-display); font-size: 24px; }
+
+    .profile-avatar-wrapper { position: relative; width: 68px; height: 68px; cursor: pointer; border-radius: 50%; display: inline-block; }
+    .profile-avatar { display: grid; width: 100%; height: 100%; place-items: center; border-radius: 50%; background: var(--warm); color: var(--copy); font-family: var(--font-display); font-size: 28px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 2px solid #fff; }
+    .avatar-img { width: 100%; height: 100%; object-fit: cover; }
+
+    .avatar-overlay { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: white; font-size: 10px; font-weight: bold; text-align: center; padding: 4px 0 6px; opacity: 0; transition: opacity 0.2s ease; border-bottom-left-radius: 50px; border-bottom-right-radius: 50px; }
+    .profile-avatar-wrapper:hover .avatar-overlay { opacity: 1; }
+
     .profile-surface { padding: clamp(20px, 4vw, 34px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
-    .profile-field { margin-bottom: 19px; }
-    .profile-field textarea { min-height: 100px; }
-    .field-error { color: #a7473e; font-size: 12px; }
-    .connected-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; background: var(--cloud); }
-    .connected-account strong { color: var(--copy); font-size: 13px; }
-    .connected-account p { margin-top: 4px; color: var(--quiet); font-size: 12px; }
+    .profile-field input, .profile-field textarea { width: 100%; padding: 8px 12px; border: 1px solid #dcd8d0; border-radius: 6px; }
+    .connected-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
 </style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const hiddenInput = document.getElementById('hidden-avatar-input');
+        const clearCheckbox = document.getElementById('hidden-avatar-clear');
+
+        document.getElementById('btn-trigger-upload').addEventListener('click', function() {
+            hiddenInput.click();
+        });
+
+        const btnRemove = document.getElementById('btn-trigger-remove');
+        if(btnRemove) {
+            btnRemove.addEventListener('click', function() {
+                clearCheckbox.checked = true;
+                hiddenInput.value = '';
+                const initial = "{{ user.full_name|default:user.username|slice:'0:1'|upper }}";
+                const placeholderHTML = `<span>${initial}</span>`;
+                document.getElementById('main-avatar-display').innerHTML = placeholderHTML;
+                bootstrap.Modal.getInstance(document.getElementById('avatarModal')).hide();
+                alert('Đã đánh dấu gỡ ảnh. Hãy bấm "Lưu thay đổi" ở form để xác nhận.');
+            });
+        }
+
+        hiddenInput.addEventListener('change', function(e) {
+            if (this.files && this.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const imgHTML = `<img src="${e.target.result}" alt="Avatar" class="avatar-img">`;
+                    document.getElementById('main-avatar-display').innerHTML = imgHTML;
+                    const modalPreview = document.getElementById('modal-avatar-preview');
+                    if(modalPreview.tagName === 'IMG') {
+                        modalPreview.src = e.target.result;
+                    } else {
+                        modalPreview.outerHTML = `<img id="modal-avatar-preview" src="${e.target.result}" class="img-fluid rounded" style="max-height: 400px; object-fit: contain;">`;
+                    }
+                }
+                reader.readAsDataURL(this.files[0]);
+                bootstrap.Modal.getInstance(document.getElementById('avatarModal')).hide();
+            }
+        });
+    });
+</script>
 {% endblock %}
