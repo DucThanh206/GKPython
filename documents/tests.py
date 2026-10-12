@@ -1,6 +1,7 @@
 import tempfile
 from io import BytesIO
-from zipfile import ZipFile
+from unittest.mock import patch
+from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -8,7 +9,10 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from reportlab.pdfgen import canvas
 
+from accounts.google_drive import GoogleDriveError
+from accounts.models import GoogleDriveConnection, GoogleDriveDocument
 from .forms import DocumentUploadForm
 from .models import (
     Category,
@@ -21,6 +25,14 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+def make_pdf(text):
+    content = BytesIO()
+    pdf = canvas.Canvas(content)
+    pdf.drawString(72, 720, text)
+    pdf.save()
+    return content.getvalue()
 
 
 class DocumentFlowTests(TestCase):
@@ -103,46 +115,344 @@ class DocumentFlowTests(TestCase):
         self.document.refresh_from_db()
         self.assertEqual(self.document.view_count, 1)
 
-    def test_detail_page_shows_full_text_file_contents(self):
-        document = Document.objects.create(
-            title='Full text sample',
-            file=SimpleUploadedFile(
-                'full-text.txt',
-                'Dòng đầu tiên.\nDòng cuối cùng.'.encode(),
-            ),
-            uploader=self.user,
-            status=Document.Status.APPROVED,
-        )
-
-        response = self.client.get(document.get_absolute_url())
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Dòng đầu tiên.')
-        self.assertContains(response, 'Dòng cuối cùng.')
-
-    def test_detail_page_extracts_docx_paragraphs_and_table_content(self):
-        docx_content = BytesIO()
-        document_xml = b'''<?xml version="1.0" encoding="UTF-8"?>
-        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-          <w:body>
-            <w:p><w:r><w:t>Doan van day du</w:t></w:r></w:p>
-            <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Noi dung trong bang</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
-          </w:body>
-        </w:document>'''
-        with ZipFile(docx_content, 'w') as archive:
-            archive.writestr('word/document.xml', document_xml)
+    def test_detail_page_routes_docx_and_text_files_to_google_docs(self):
         document = Document.objects.create(
             title='Word content sample',
-            file=SimpleUploadedFile('content.docx', docx_content.getvalue()),
+            file=SimpleUploadedFile('content.docx', b'docx-content'),
             uploader=self.user,
             status=Document.Status.APPROVED,
         )
+        self.client.force_login(self.other_user)
 
         response = self.client.get(document.get_absolute_url())
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Doan van day du')
-        self.assertContains(response, 'Noi dung trong bang')
+        self.assertContains(response, 'Mở bằng Google Docs')
+        self.assertContains(response, reverse('document_open', args=[document.pk]))
+
+        text_document = Document.objects.create(
+            title='Text content sample',
+            file=SimpleUploadedFile('text-sample.txt', b'text-content'),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        text_response = self.client.get(text_document.get_absolute_url())
+        self.assertContains(text_response, 'Mở bằng Google Docs')
+
+    def test_pdf_open_route_opens_inline_in_browser_for_member_and_admin(self):
+        approved_document = Document.objects.create(
+            title='Approved PDF',
+            file=SimpleUploadedFile('selectable.pdf', make_pdf('PDF content')),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        pending_document = Document.objects.create(
+            title='Pending PDF',
+            file=SimpleUploadedFile('pending-selectable.pdf', make_pdf('Pending content')),
+            uploader=self.user,
+            status=Document.Status.PENDING,
+        )
+        admin = User.objects.create_user(
+            username='pdf-reviewer',
+            password='secret12345',
+            role=User.Role.ADMIN,
+        )
+
+        self.client.force_login(self.other_user)
+        member_response = self.client.get(
+            reverse('document_open', args=[approved_document.pk]),
+            follow=True,
+        )
+        self.assertEqual(member_response.status_code, 200)
+        self.assertEqual(member_response['Content-Type'], 'application/pdf')
+        self.assertEqual(member_response['Content-Disposition'], 'inline')
+        member_response.close()
+
+        self.client.force_login(admin)
+        admin_response = self.client.get(
+            reverse('document_open', args=[pending_document.pk]),
+            follow=True,
+        )
+        self.assertEqual(admin_response.status_code, 200)
+        self.assertEqual(admin_response['Content-Type'], 'application/pdf')
+        self.assertEqual(admin_response['Content-Disposition'], 'inline')
+        admin_response.close()
+
+    @override_settings(
+        GOOGLE_OAUTH_CLIENT_ID='client-id',
+        GOOGLE_OAUTH_CLIENT_SECRET='client-secret',
+    )
+    def test_open_route_imports_each_supported_non_pdf_to_matching_google_app(self):
+        connection = GoogleDriveConnection(
+            user=self.other_user,
+            google_email='drive@example.com',
+        )
+        connection.set_refresh_token('refresh-token')
+        connection.save()
+        file_types = {
+            '.csv': 'application/vnd.google-apps.spreadsheet',
+            '.xls': 'application/vnd.google-apps.spreadsheet',
+            '.xlsx': 'application/vnd.google-apps.spreadsheet',
+            '.doc': 'application/vnd.google-apps.document',
+            '.docx': 'application/vnd.google-apps.document',
+            '.md': 'application/vnd.google-apps.document',
+            '.txt': 'application/vnd.google-apps.document',
+            '.ppt': 'application/vnd.google-apps.presentation',
+            '.pptx': 'application/vnd.google-apps.presentation',
+        }
+        upload_links = [
+            (f'drive-id-{index}', f'https://docs.google.com/document/d/{index}/edit')
+            for index in range(len(file_types))
+        ]
+        self.client.force_login(self.other_user)
+
+        with (
+            patch('documents.views.refresh_access_token', return_value='access-token'),
+            patch('documents.views.get_existing_file_link', return_value=None),
+            patch('documents.views.upload_file', side_effect=upload_links) as upload,
+        ):
+            for index, (extension, target_mime_type) in enumerate(file_types.items()):
+                with self.subTest(extension=extension):
+                    document = Document.objects.create(
+                        title='Workspace import',
+                        file=SimpleUploadedFile(
+                            f'workspace{extension}',
+                            b'document-content',
+                        ),
+                        uploader=self.user,
+                        status=Document.Status.APPROVED,
+                    )
+                    response = self.client.post(
+                        reverse('document_open', args=[document.pk])
+                    )
+                    self.assertEqual(response.status_code, 302)
+                    self.assertIn('docs.google.com', response['Location'])
+                    self.assertEqual(
+                        upload.call_args_list[index].args[1],
+                        f'Workspace import{extension}',
+                    )
+                    self.assertEqual(
+                        upload.call_args_list[index].args[3],
+                        target_mime_type,
+                    )
+                    self.assertTrue(
+                        GoogleDriveDocument.objects.filter(
+                            user=self.other_user,
+                            document=document,
+                        ).exists()
+                    )
+
+    @override_settings(
+        GOOGLE_OAUTH_CLIENT_ID='client-id',
+        GOOGLE_OAUTH_CLIENT_SECRET='client-secret',
+    )
+    def test_open_route_reuses_existing_google_drive_copy(self):
+        document = Document.objects.create(
+            title='Reused copy',
+            file=SimpleUploadedFile('reused.docx', b'document-content'),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        connection = GoogleDriveConnection(
+            user=self.other_user,
+            google_email='drive@example.com',
+        )
+        connection.set_refresh_token('refresh-token')
+        connection.save()
+        GoogleDriveDocument.objects.create(
+            user=self.other_user,
+            document=document,
+            drive_file_id='existing-drive-id',
+            web_view_link='https://docs.google.com/document/d/existing-drive-id/edit',
+        )
+        self.client.force_login(self.other_user)
+
+        with (
+            patch('documents.views.refresh_access_token', return_value='access-token'),
+            patch(
+                'documents.views.get_existing_file_link',
+                return_value='https://docs.google.com/document/d/existing-drive-id/edit',
+            ) as get_link,
+            patch('documents.views.upload_file') as upload,
+        ):
+            response = self.client.post(reverse('document_open', args=[document.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response['Location'],
+            'https://docs.google.com/document/d/existing-drive-id/edit',
+        )
+        get_link.assert_called_once_with('access-token', 'existing-drive-id')
+        upload.assert_not_called()
+
+    @override_settings(
+        GOOGLE_OAUTH_CLIENT_ID='client-id',
+        GOOGLE_OAUTH_CLIENT_SECRET='client-secret',
+    )
+    def test_workspace_open_shows_actionable_drive_api_configuration_error(self):
+        document = Document.objects.create(
+            title='Drive API error',
+            file=SimpleUploadedFile('api-error.docx', b'document-content'),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        connection = GoogleDriveConnection(
+            user=self.other_user,
+            google_email='drive@example.com',
+        )
+        connection.set_refresh_token('refresh-token')
+        connection.save()
+        self.client.force_login(self.other_user)
+
+        with (
+            patch('documents.views.refresh_access_token', return_value='access-token'),
+            patch('documents.views.get_existing_file_link', return_value=None),
+            patch(
+                'documents.views.upload_file',
+                side_effect=GoogleDriveError(
+                    'Drive API is disabled',
+                    status_code=403,
+                    reason='accessNotConfigured',
+                ),
+            ),
+        ):
+            response = self.client.post(
+                reverse('document_open', args=[document.pk]),
+                follow=True,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Google Drive API chưa được bật')
+
+    @override_settings(
+        GOOGLE_OAUTH_CLIENT_ID='client-id',
+        GOOGLE_OAUTH_CLIENT_SECRET='client-secret',
+    )
+    def test_admin_can_import_pending_office_document_to_google_docs(self):
+        document = Document.objects.create(
+            title='Pending office review',
+            file=SimpleUploadedFile('pending-review.docx', b'document-content'),
+            uploader=self.user,
+            status=Document.Status.PENDING,
+        )
+        admin = User.objects.create_user(
+            username='workspace-reviewer',
+            password='secret12345',
+            role=User.Role.ADMIN,
+        )
+        connection = GoogleDriveConnection(
+            user=admin,
+            google_email='reviewer@example.com',
+        )
+        connection.set_refresh_token('refresh-token')
+        connection.save()
+        self.client.force_login(admin)
+
+        with (
+            patch('documents.views.refresh_access_token', return_value='access-token'),
+            patch('documents.views.get_existing_file_link', return_value=None),
+            patch(
+                'documents.views.upload_file',
+                return_value=(
+                    'pending-drive-id',
+                    'https://docs.google.com/document/d/pending-drive-id/edit',
+                ),
+            ) as upload,
+        ):
+            response = self.client.post(
+                reverse('document_open', args=[document.pk])
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response['Location'],
+            'https://docs.google.com/document/d/pending-drive-id/edit',
+        )
+        self.assertEqual(
+            upload.call_args.args[3],
+            'application/vnd.google-apps.document',
+        )
+
+    def test_open_route_requires_a_post_or_oauth_resume_for_workspace_imports(self):
+        document = Document.objects.create(
+            title='Protected opening action',
+            file=SimpleUploadedFile('protected.docx', b'document-content'),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        connection = GoogleDriveConnection(
+            user=self.other_user,
+            google_email='drive@example.com',
+        )
+        connection.set_refresh_token('refresh-token')
+        connection.save()
+        self.client.force_login(self.other_user)
+
+        with patch('documents.views.upload_file') as upload:
+            response = self.client.get(reverse('document_open', args=[document.pk]))
+
+        self.assertRedirects(response, document.get_absolute_url())
+        upload.assert_not_called()
+
+    def test_opening_workspace_document_without_connection_starts_drive_oauth(self):
+        document = Document.objects.create(
+            title='Connect before opening',
+            file=SimpleUploadedFile('connect.docx', b'document-content'),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        self.client.force_login(self.other_user)
+
+        response = self.client.post(reverse('document_open', args=[document.pk]))
+
+        self.assertRedirects(
+            response,
+            f"{reverse('google_drive_connect')}?"
+            f"{urlencode({'next': reverse('document_open', args=[document.pk])})}",
+            fetch_redirect_response=False,
+        )
+
+    @override_settings(
+        GOOGLE_OAUTH_CLIENT_ID='client-id',
+        GOOGLE_OAUTH_CLIENT_SECRET='client-secret',
+    )
+    def test_oauth_resume_opens_workspace_document_once(self):
+        document = Document.objects.create(
+            title='Resume after Google consent',
+            file=SimpleUploadedFile('resume.docx', b'document-content'),
+            uploader=self.user,
+            status=Document.Status.APPROVED,
+        )
+        connection = GoogleDriveConnection(
+            user=self.other_user,
+            google_email='drive@example.com',
+        )
+        connection.set_refresh_token('refresh-token')
+        connection.save()
+        self.client.force_login(self.other_user)
+        session = self.client.session
+        session['google_drive_resume_open_document_id'] = document.pk
+        session.save()
+
+        with (
+            patch('documents.views.refresh_access_token', return_value='access-token'),
+            patch('documents.views.get_existing_file_link', return_value=None),
+            patch(
+                'documents.views.upload_file',
+                return_value=(
+                    'resumed-drive-id',
+                    'https://docs.google.com/document/d/resumed-drive-id/edit',
+                ),
+            ),
+        ):
+            response = self.client.get(reverse('document_open', args=[document.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response['Location'],
+            'https://docs.google.com/document/d/resumed-drive-id/edit',
+        )
+        self.assertNotIn('google_drive_resume_open_document_id', self.client.session)
 
     def test_pdf_preview_is_inline_and_private_preview_requires_login(self):
         response = self.client.get(
@@ -295,6 +605,24 @@ class DocumentFlowTests(TestCase):
         response = self.client.get(reverse('document_moderation'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Kiểm duyệt tài liệu')
+
+    def test_admin_can_open_a_pending_document_for_review(self):
+        pending_document = Document.objects.create(
+            title='Tài liệu chờ duyệt',
+            file=SimpleUploadedFile('pending-review.pdf', b'pending document'),
+            uploader=self.user,
+            status=Document.Status.PENDING,
+        )
+        admin = User.objects.create_user(
+            username='reviewer', password='secret12345', role=User.Role.ADMIN
+        )
+
+        self.client.force_login(admin)
+        response = self.client.get(pending_document.get_absolute_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Tài liệu đang chờ quản trị viên kiểm duyệt')
+        self.assertContains(response, pending_document.title)
 
     def test_comment_edits_are_limited_to_owner_and_soft_delete(self):
         comment = Comment.objects.create(

@@ -22,11 +22,16 @@
                 <td>{{ document.category|default:"—" }}</td>
                 <td>{{ document.uploaded_at|date:"d/m/Y H:i" }}</td>
                 <td><span class="status-pill {% if document.status == 'approved' %}status-approved{% elif document.status == 'pending' %}status-waiting{% else %}status-rejected{% endif %}">{{ document.get_status_display }}</span></td>
-                <td><form method="post" action="{% url 'moderate_document' document.pk %}" class="d-flex gap-1">
-                    {% csrf_token %}
-                    {% if document.status != 'approved' %}<button class="btn btn-sm btn-success" name="status" value="approved">Duyệt</button>{% endif %}
-                    {% if document.status != 'rejected' %}<button class="btn btn-sm btn-outline-danger" name="status" value="rejected">Gỡ bỏ</button>{% endif %}
-                </form></td>
+                <td>
+                    <div class="d-flex gap-1 flex-wrap">
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'document_detail' document.pk %}" target="_blank" rel="noopener">Xem</a>
+                        <form method="post" action="{% url 'moderate_document' document.pk %}" class="d-flex gap-1">
+                            {% csrf_token %}
+                            {% if document.status != 'approved' %}<button class="btn btn-sm btn-success" name="status" value="approved">Duyệt</button>{% endif %}
+                            {% if document.status != 'rejected' %}<button class="btn btn-sm btn-outline-danger" name="status" value="rejected">Gỡ bỏ</button>{% endif %}
+                        </form>
+                    </div>
+                </td>
             </tr>
             {% empty %}<tr><td colspan="6" class="empty-table-message">Không có tài liệu cần xử lý trong danh mục này.</td></tr>{% endfor %}
             </tbody>

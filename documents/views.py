@@ -1,10 +1,11 @@
+import logging
 from pathlib import Path
-from xml.etree.ElementTree import ParseError
-from zipfile import BadZipFile
+import urllib.parse
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q
@@ -15,6 +16,14 @@ from django.utils.text import slugify
 from django.views.generic import CreateView, DetailView, ListView
 
 from accounts.decorators import admin_required
+from accounts.google_drive import (
+    GoogleDriveAuthorizationError,
+    GoogleDriveError,
+    get_existing_file_link,
+    refresh_access_token,
+    upload_file,
+)
+from accounts.models import GoogleDriveConnection, GoogleDriveDocument
 
 from .forms import CommentForm, DocumentUploadForm, RatingForm
 from .models import (
@@ -27,7 +36,49 @@ from .models import (
     Rating,
     Share,
 )
-from .previews import TEXT_EXTENSIONS, extract_docx_text, get_plain_text
+from .previews import TEXT_EXTENSIONS
+
+logger = logging.getLogger(__name__)
+
+GOOGLE_WORKSPACE_IMPORTS = {
+    '.csv': (
+        'Spreadsheets',
+        'text/csv',
+        'application/vnd.google-apps.spreadsheet',
+    ),
+    '.xls': (
+        'Spreadsheets',
+        'application/vnd.ms-excel',
+        'application/vnd.google-apps.spreadsheet',
+    ),
+    '.xlsx': (
+        'Spreadsheets',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.google-apps.spreadsheet',
+    ),
+    '.doc': (
+        'Docs',
+        'application/msword',
+        'application/vnd.google-apps.document',
+    ),
+    '.docx': (
+        'Docs',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.google-apps.document',
+    ),
+    '.md': ('Docs', 'text/plain', 'application/vnd.google-apps.document'),
+    '.txt': ('Docs', 'text/plain', 'application/vnd.google-apps.document'),
+    '.ppt': (
+        'Presentation',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.google-apps.presentation',
+    ),
+    '.pptx': (
+        'Presentation',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.google-apps.presentation',
+    ),
+}
 
 
 class DocumentListView(ListView):
@@ -113,21 +164,7 @@ class DocumentDetailView(DetailView):
         )
         context['can_view_content'] = can_view
         context['preview_kind'] = _preview_kind(self.object.file.name)
-        context['preview_url'] = reverse('document_preview', args=[self.object.pk])
-        if can_view and context['preview_kind'] in ('docx', 'text'):
-            try:
-                with self.object.file.open('rb') as file_handle:
-                    file_content = file_handle.read()
-                if context['preview_kind'] == 'docx':
-                    context['preview_content'] = extract_docx_text(file_content)
-                else:
-                    context['preview_content'] = get_plain_text(file_content)
-            except (BadZipFile, KeyError, ParseError):
-                context['preview_error'] = 'Không thể đọc nội dung tệp này.'
-            except UnicodeDecodeError:
-                context['preview_error'] = 'Tệp văn bản không sử dụng mã hóa UTF-8.'
-            except FileNotFoundError as exc:
-                raise Http404('Không tìm thấy tệp tài liệu.') from exc
+        context['workspace_app'] = _workspace_app(self.object.file.name)
         context['comments'] = self.object.comments.filter(is_deleted=False).select_related('user')
         context['comment_form'] = CommentForm()
         context['rating_form'] = RatingForm()
@@ -190,6 +227,164 @@ def _preview_kind(file_name):
     if extension in TEXT_EXTENSIONS:
         return 'text'
     return 'unsupported'
+
+
+def _workspace_app(file_name):
+    extension = Path(file_name).suffix.lower()
+    if extension == '.pdf':
+        return None
+    workspace_import = GOOGLE_WORKSPACE_IMPORTS.get(extension)
+    return workspace_import[0] if workspace_import else None
+
+
+def _google_drive_error_message(error):
+    reason = (error.reason or '').casefold()
+    if reason in ('accessnotconfigured', 'servicedisabled', 'api_disabled'):
+        return (
+            'Google Drive API chưa được bật trong Google Cloud project. '
+            'Bật Google Drive API rồi thử lại.'
+        )
+    if reason in ('insufficientpermissions', 'access_token_scope_insufficient'):
+        return (
+            'Google Drive chưa được cấp quyền cần thiết. Hủy liên kết Drive, '
+            'kết nối lại và chấp thuận quyền truy cập tệp.'
+        )
+    if reason == 'storagequotaexceeded':
+        return 'Google Drive đã hết dung lượng, không thể nhập thêm tài liệu.'
+    status = f'HTTP {error.status_code}' if error.status_code else 'không xác định'
+    reason_text = f' ({error.reason})' if error.reason else ''
+    return (
+        f'Google Drive từ chối yêu cầu ({status}{reason_text}). '
+        'Kiểm tra terminal đang chạy Django để xem chi tiết.'
+    )
+
+
+def open_document(request, pk):
+    document_query = Document.objects.select_related('uploader').filter(pk=pk)
+    is_admin = request.user.is_authenticated and (
+        request.user.is_superuser or getattr(request.user, 'role', None) == 'admin'
+    )
+    if is_admin:
+        document = get_object_or_404(document_query)
+    elif request.user.is_authenticated:
+        document = get_object_or_404(
+            document_query.filter(
+                Q(status=Document.Status.APPROVED)
+                | Q(uploader=request.user, status=Document.Status.PENDING)
+            )
+        )
+    else:
+        document = get_object_or_404(document_query, status=Document.Status.APPROVED)
+
+    if (
+        document.visibility == Document.Visibility.LOGIN
+        and not request.user.is_authenticated
+    ):
+        return redirect(f"{reverse('login')}?next={request.path}")
+    if not document.file:
+        raise Http404('Tệp tài liệu không tồn tại.')
+
+    extension = Path(document.file.name).suffix.lower()
+    if extension == '.pdf':
+        return redirect('document_preview', pk=document.pk)
+    workspace_import = GOOGLE_WORKSPACE_IMPORTS.get(extension)
+    if workspace_import is None:
+        raise Http404('Định dạng tài liệu không được hỗ trợ.')
+    if not request.user.is_authenticated:
+        return redirect(f"{reverse('login')}?next={request.path}")
+
+    if request.method == 'POST':
+        request.session.pop('google_drive_resume_open_document_id', None)
+    elif request.session.get('google_drive_resume_open_document_id') == document.pk:
+        request.session.pop('google_drive_resume_open_document_id')
+    else:
+        return redirect(document.get_absolute_url())
+
+    connection = GoogleDriveConnection.objects.filter(user=request.user).first()
+    if connection is None:
+        connect_url = (
+            f"{reverse('google_drive_connect')}?"
+            f"{urllib.parse.urlencode({'next': request.path})}"
+        )
+        return redirect(connect_url)
+    if not settings.GOOGLE_OAUTH_CLIENT_ID or not settings.GOOGLE_OAUTH_CLIENT_SECRET:
+        messages.error(request, 'Kết nối Google Drive chưa được cấu hình.')
+        return redirect(document.get_absolute_url())
+
+    try:
+        access_token = refresh_access_token(
+            connection.get_refresh_token(),
+            settings.GOOGLE_OAUTH_CLIENT_ID,
+            settings.GOOGLE_OAUTH_CLIENT_SECRET,
+        )
+        drive_copy = GoogleDriveDocument.objects.filter(
+            user=request.user,
+            document=document,
+        ).first()
+        if drive_copy:
+            existing_link = get_existing_file_link(
+                access_token, drive_copy.drive_file_id
+            )
+            if existing_link:
+                drive_copy.web_view_link = existing_link
+                drive_copy.save(update_fields=['web_view_link'])
+                return redirect(existing_link)
+            drive_copy.delete()
+
+        _, source_mime_type, target_mime_type = workspace_import
+        try:
+            with document.file.open('rb') as file_handle:
+                content = file_handle.read()
+        except FileNotFoundError as exc:
+            raise Http404('Không tìm thấy tệp tài liệu.') from exc
+
+        drive_file_id, web_view_link = upload_file(
+            access_token,
+            _workspace_import_filename(document.title, extension),
+            source_mime_type,
+            target_mime_type,
+            content,
+        )
+        GoogleDriveDocument.objects.create(
+            user=request.user,
+            document=document,
+            drive_file_id=drive_file_id,
+            web_view_link=web_view_link,
+        )
+    except GoogleDriveAuthorizationError:
+        GoogleDriveDocument.objects.filter(user=request.user).delete()
+        connection.delete()
+        messages.warning(
+            request,
+            'Kết nối Google Drive đã hết hạn. Vui lòng kết nối lại để mở tài liệu.',
+        )
+        return redirect(
+            f"{reverse('google_drive_connect')}?"
+            f"{urllib.parse.urlencode({'next': request.path})}"
+        )
+    except ValueError:
+        GoogleDriveDocument.objects.filter(user=request.user).delete()
+        connection.delete()
+        messages.error(
+            request,
+            'Thông tin kết nối Google Drive không còn hợp lệ. Vui lòng kết nối lại.',
+        )
+        return redirect(
+            f"{reverse('google_drive_connect')}?"
+            f"{urllib.parse.urlencode({'next': request.path})}"
+        )
+    except GoogleDriveError as error:
+        logger.exception('Could not open document with Google Drive.')
+        messages.error(
+            request,
+            _google_drive_error_message(error),
+        )
+        return redirect(document.get_absolute_url())
+    return redirect(web_view_link)
+
+
+def _workspace_import_filename(title, extension):
+    return title if title.casefold().endswith(extension) else f'{title}{extension}'
 
 
 def document_preview(request, pk):

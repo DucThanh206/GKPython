@@ -5,17 +5,23 @@ tải lên và tải xuống tài liệu học tập theo danh mục môn học,
 
 ## Cài đặt
 
+Khởi tạo lần đầu
 ```bash
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
 python manage.py migrate
-python manage.py createsuperuser
-python manage.py runserver
 ```
 
-Truy cập http://127.0.0.1:8000
+Tạo tài khoản quản trị viên (admin)
+```bash
+python manage.py createsuperuser
+```
+Sau đó nhập tên người dùng, email và mật khẩu cho tài khoản này.
+
+Khởi động web app
+```bash
+python manage.py runserver
+```
+rồi truy cập 127.0.0.1:8000 .
 
 Để tạo dữ liệu mẫu phục vụ kiểm thử cục bộ, chạy lệnh sau sau khi migrate:
 
@@ -38,6 +44,20 @@ sau đó cấu hình `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` và
 trị này vào Git. Khi chưa cấu hình, đăng nhập bằng tên tài khoản/mật khẩu vẫn
 hoạt động bình thường. Nếu email Google trùng với tài khoản có sẵn, hãy đăng
 nhập tài khoản đó trước rồi liên kết Google tại trang hồ sơ.
+
+Trong môi trường local, mở file `.env` ở thư mục gốc và điền Client ID/Secret.
+File này được Git bỏ qua; `.env.example` là file mẫu không chứa bí mật. Django
+tự đọc `.env` khi khởi động, vì vậy hãy khởi động lại `runserver` sau khi sửa.
+Các biến môi trường hệ thống, nếu có, được ưu tiên hơn `.env`.
+
+Để mở tài liệu Office bằng Google Workspace, bật Google Drive API trong cùng
+Google Cloud project và thêm callback
+`http://127.0.0.1:8000/accounts/google/drive/callback/` vào OAuth Web Client.
+Ứng dụng dùng scope `drive.file`: tệp được nhập thành bản sao riêng trong Drive
+của người đang mở tài liệu, không công khai và không thay đổi tệp gốc EduHub.
+Thiết lập `GOOGLE_DRIVE_REDIRECT_URI` nếu callback production không thể tự suy
+ra từ request. Bí mật refresh token được mã hóa bằng `DJANGO_SECRET_KEY`; giữ
+khóa này ổn định hoặc người dùng sẽ cần kết nối Drive lại khi khóa thay đổi.
 
 ## Cấu trúc dự án
 
@@ -78,9 +98,11 @@ Bình luận và đánh giá của khách được giữ trong session và gửi
 tất đăng nhập. Tệp tải lên giới hạn 25 MiB và nhận PDF, DOC/DOCX, PPT/PPTX,
 XLS/XLSX, TXT, Markdown hoặc CSV.
 
-Trang chi tiết nhúng PDF để đọc trực tiếp, trích xuất nội dung đoạn văn/bảng
-của DOCX và hiển thị đầy đủ tệp TXT, Markdown, CSV. Định dạng chưa hỗ trợ
-preview cần tải về để mở bằng ứng dụng tương ứng.
+PDF được mở trực tiếp bằng trình đọc của trình duyệt trong tab mới. CSV/XLS/XLSX
+được nhập thành bản sao Google Sheets; DOC/DOCX/MD/TXT thành Google Docs; PPT/PPTX
+thành Google Slides. Việc nhập yêu cầu người dùng đã đăng nhập và kết nối Google
+Drive; tài liệu được lưu riêng trong Drive của người mở.
+Người dùng có thể liên kết hoặc hủy liên kết tài khoản Drive tại trang hồ sơ.
 
 Các tệp tài liệu không được phục vụ trực tiếp từ đường dẫn media; tải xuống đi
 qua endpoint có kiểm tra trạng thái và quyền. Khi triển khai production, không

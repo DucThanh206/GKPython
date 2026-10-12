@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path('', views.DocumentListView.as_view(), name='document_list'),
     path('upload/', views.DocumentUploadView.as_view(), name='document_upload'),
+    path('<int:pk>/open/', views.open_document, name='document_open'),
     path('<int:pk>/preview/', views.document_preview, name='document_preview'),
     path('library/', views.personal_library, name='personal_library'),
     path('library/<int:entry_id>/remove/', views.remove_library_entry, name='remove_library_entry'),

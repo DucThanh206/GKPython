@@ -55,6 +55,27 @@
             <a class="btn btn-sm btn-outline-danger" href="{% url 'password_change' %}">Đổi mật khẩu</a>
         </section>
 
+        {% if google_oauth_enabled %}
+        <section class="connected-account mb-4 p-3 border rounded bg-light">
+            <div>
+                <strong>Google Workspace</strong>
+                {% if google_drive_connection %}
+                    <p class="mb-0 text-muted">Đã kết nối {{ google_drive_connection.google_email }}. Tài liệu mở từ EduHub sẽ được lưu trong Drive của tài khoản này.</p>
+                {% else %}
+                    <p class="mb-0 text-muted">Kết nối Google Drive để mở DOC, DOCX, MD, TXT, CSV, XLS, XLSX, PPT và PPTX.</p>
+                {% endif %}
+            </div>
+            {% if google_drive_connection %}
+                <form method="post" action="{% url 'google_drive_disconnect' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Hủy liên kết Drive</button>
+                </form>
+            {% else %}
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'google_drive_connect' %}">Kết nối Google Drive</a>
+            {% endif %}
+        </section>
+        {% endif %}
+
     </div>
 </div>
 
