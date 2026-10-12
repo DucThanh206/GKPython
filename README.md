@@ -5,9 +5,15 @@ tải lên và tải xuống tài liệu học tập theo danh mục môn học,
 
 ## Cài đặt
 
-Khởi tạo lần đầu
+Khởi tạo môi trường lần đầu
 ```bash
+python -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Chạy ứng dụng
+```bash
 python manage.py migrate
 ```
 
