@@ -5,11 +5,14 @@ tải lên và tải xuống tài liệu học tập theo danh mục môn học,
 
 ## Cài đặt
 
+Cài đặt môi trường ban đầu
 ```bash
 python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
+Thực hiện chạy web
+```bash
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
