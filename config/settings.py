@@ -239,10 +239,6 @@ if EMAIL_USE_SSL and EMAIL_USE_TLS:
     raise RuntimeError("Enable only one of EMAIL_USE_SSL or EMAIL_USE_TLS.")
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
-GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
-    'GOOGLE_OAUTH_REDIRECT_URI',
-    'http://127.0.0.1:8000/accounts/google/callback/',
-)
 GOOGLE_DRIVE_REDIRECT_URI = os.environ.get('GOOGLE_DRIVE_REDIRECT_URI', '')
 
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration

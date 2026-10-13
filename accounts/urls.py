@@ -5,8 +5,6 @@ from . import views
 
 urlpatterns = [
     path('signup/', views.SignUpView.as_view(), name='signup'),
-    path('google/login/', views.google_login, name='google_login'),
-    path('google/callback/', views.google_oauth_callback, name='google_oauth_callback'),
     path('google/drive/connect/', views.google_drive_connect, name='google_drive_connect'),
     path('google/drive/callback/', views.google_drive_callback, name='google_drive_callback'),
     path('google/drive/disconnect/', views.google_drive_disconnect, name='google_drive_disconnect'),

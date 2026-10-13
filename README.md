@@ -41,29 +41,21 @@ báo cáo vi phạm và bản ghi thống kê. Lệnh có thể chạy lại mà
 liệu; mật khẩu chỉ được đặt cho tài khoản demo mới tạo và không bị đổi nếu các
 tài khoản đã tồn tại. Chỉ dùng dữ liệu/tài khoản demo trong môi trường local.
 
-### Đăng nhập Google OAuth (tùy chọn)
-
-Tạo OAuth 2.0 Web Client trong Google Cloud Console, thêm callback
-`http://127.0.0.1:8000/accounts/google/callback/` vào danh sách redirect URI,
-sau đó cấu hình `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` và
-`GOOGLE_OAUTH_REDIRECT_URI` trong môi trường chạy ứng dụng. Không lưu các giá
-trị này vào Git. Khi chưa cấu hình, đăng nhập bằng tên tài khoản/mật khẩu vẫn
-hoạt động bình thường. Nếu email Google trùng với tài khoản có sẵn, hãy đăng
-nhập tài khoản đó trước rồi liên kết Google tại trang hồ sơ.
-
-Trong môi trường local, mở file `.env` ở thư mục gốc và điền Client ID/Secret.
-File này được Git bỏ qua; `.env.example` là file mẫu không chứa bí mật. Django
-tự đọc `.env` khi khởi động, vì vậy hãy khởi động lại `runserver` sau khi sửa.
-Các biến môi trường hệ thống, nếu có, được ưu tiên hơn `.env`.
-
 Để mở tài liệu Office bằng Google Workspace, bật Google Drive API trong cùng
 Google Cloud project và thêm callback
 `http://127.0.0.1:8000/accounts/google/drive/callback/` vào OAuth Web Client.
+Đăng nhập EduHub chỉ hỗ trợ tên tài khoản và mật khẩu; Google OAuth chỉ dùng
+để kết nối Google Drive.
 Ứng dụng dùng scope `drive.file`: tệp được nhập thành bản sao riêng trong Drive
 của người đang mở tài liệu, không công khai và không thay đổi tệp gốc EduHub.
 Thiết lập `GOOGLE_DRIVE_REDIRECT_URI` nếu callback production không thể tự suy
 ra từ request. Bí mật refresh token được mã hóa bằng `DJANGO_SECRET_KEY`; giữ
 khóa này ổn định hoặc người dùng sẽ cần kết nối Drive lại khi khóa thay đổi.
+
+Trong môi trường local, mở file `.env` ở thư mục gốc và điền Google OAuth Client
+ID/Secret. File này được Git bỏ qua; `.env.example` là file mẫu không chứa bí
+mật. Django tự đọc `.env` khi khởi động, vì vậy hãy khởi động lại `runserver`
+sau khi sửa. Các biến môi trường hệ thống, nếu có, được ưu tiên hơn `.env`.
 
 ## Cấu trúc dự án
 

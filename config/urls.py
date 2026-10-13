@@ -11,12 +11,6 @@ urlpatterns = [
         'login/',
         auth_views.LoginView.as_view(
             template_name='registration/login.html',
-            extra_context={
-                'google_oauth_enabled': bool(
-                    settings.GOOGLE_OAUTH_CLIENT_ID
-                    and settings.GOOGLE_OAUTH_CLIENT_SECRET
-                )
-            },
         ),
         name='login',
     ),

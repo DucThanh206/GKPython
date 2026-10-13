@@ -26,10 +26,6 @@
             {% endfor %}
             <button type="submit" class="btn btn-dark w-100 mt-2">Đăng nhập</button>
         </form>
-        {% if google_oauth_enabled %}
-        <div class="auth-divider"><span>hoặc tiếp tục với</span></div>
-        <a class="btn btn-outline-secondary w-100 google-button" href="{% url 'google_login' %}{% if request.GET.next %}?next={{ request.GET.next|urlencode }}{% endif %}">Google</a>
-        {% endif %}
         <p class="auth-switch">Chưa có tài khoản? <a href="{% url 'signup' %}">Tạo tài khoản mới</a></p>
     </section>
 </div>
@@ -47,9 +43,6 @@
     .auth-field label { display: block; margin-bottom: 7px; color: var(--copy); font-size: 12px; font-weight: 600; }
     .auth-field input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #dcd8d0; border-radius: 6px; background: var(--paper); font: 14px var(--font-ui); }
     .auth-field input:focus { outline: 0; border-color: #928d83; box-shadow: 0 0 0 3px rgba(46,46,46,.08); }
-    .auth-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--quiet); font-size: 11px; }
-    .auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: rgba(0,0,0,.1); content: ""; }
-    .google-button { background: var(--paper); }
     .auth-switch { margin: 24px 0 0; color: var(--quiet); font-size: 12px; text-align: center; }
     .auth-switch a { font-weight: 600; }
     @media (max-width: 767.98px) {
