@@ -24,7 +24,7 @@
                 <td><span class="status-pill {% if document.status == 'approved' %}status-approved{% elif document.status == 'pending' %}status-waiting{% else %}status-rejected{% endif %}">{{ document.get_status_display }}</span></td>
                 <td>
                     <div class="d-flex gap-1 flex-wrap">
-                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'document_detail' document.pk %}" target="_blank" rel="noopener">Xem</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="{% url 'document_detail' document.pk %}">Xem</a>
                         <form method="post" action="{% url 'moderate_document' document.pk %}" class="d-flex gap-1">
                             {% csrf_token %}
                             {% if document.status != 'approved' %}<button class="btn btn-sm btn-success" name="status" value="approved">Duyệt</button>{% endif %}

@@ -605,6 +605,7 @@ class DocumentFlowTests(TestCase):
         response = self.client.get(reverse('document_moderation'))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Kiểm duyệt tài liệu')
+        self.assertNotContains(response, 'target="_blank"')
 
     def test_admin_can_open_a_pending_document_for_review(self):
         pending_document = Document.objects.create(
