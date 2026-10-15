@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -8,6 +9,7 @@ import urllib.request
 GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 GOOGLE_DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 GOOGLE_DRIVE_UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
+RESUMABLE_UPLOAD_MAX_ATTEMPTS = 3
 logger = logging.getLogger(__name__)
 
 
@@ -91,6 +93,54 @@ def upload_file(access_token, filename, source_mime_type, target_mime_type, cont
         {'name': filename, 'mimeType': target_mime_type},
         ensure_ascii=False,
     ).encode('utf-8')
+    result = None
+    for attempt in range(RESUMABLE_UPLOAD_MAX_ATTEMPTS):
+        upload_url = _start_resumable_upload(
+            access_token,
+            metadata,
+            source_mime_type,
+            len(content),
+        )
+        try:
+            try:
+                result = _upload_content(
+                    upload_url,
+                    access_token,
+                    source_mime_type,
+                    content,
+                    start=0,
+                )
+            except GoogleDriveError as exc:
+                if not _is_resumable_upload_error(exc):
+                    raise
+                result = _resume_upload(
+                    upload_url,
+                    access_token,
+                    source_mime_type,
+                    content,
+                    exc,
+                )
+            break
+        except GoogleDriveError as exc:
+            if (
+                not _is_expired_upload_session_error(exc)
+                or attempt == RESUMABLE_UPLOAD_MAX_ATTEMPTS - 1
+            ):
+                raise
+            logger.info(
+                'Google Drive upload session expired with HTTP %s; starting a new session.',
+                exc.status_code,
+            )
+
+    if result is None:
+        raise GoogleDriveError('Google Drive upload did not complete.')
+    file_id = result.get('id')
+    if not isinstance(file_id, str) or not file_id:
+        raise GoogleDriveError('Google Drive did not return a file ID.')
+    return file_id, _google_view_link(result.get('webViewLink'))
+
+
+def _start_resumable_upload(access_token, metadata, source_mime_type, content_length):
     query = urllib.parse.urlencode(
         {'uploadType': 'resumable', 'fields': 'id,webViewLink'}
     )
@@ -101,7 +151,7 @@ def upload_file(access_token, filename, source_mime_type, target_mime_type, cont
             'Authorization': f'Bearer {access_token}',
             'Content-Type': 'application/json; charset=UTF-8',
             'X-Upload-Content-Type': source_mime_type,
-            'X-Upload-Content-Length': str(len(content)),
+            'X-Upload-Content-Length': str(content_length),
         },
         method='POST',
     )
@@ -120,22 +170,111 @@ def upload_file(access_token, filename, source_mime_type, target_mime_type, cont
         or upload_port not in (None, 443)
     ):
         raise GoogleDriveError('Google Drive returned an invalid upload session.')
+    return upload_url
 
-    upload_request = urllib.request.Request(
+
+def _upload_content(upload_url, access_token, source_mime_type, content, *, start):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': source_mime_type,
+        'Content-Length': str(len(content) - start),
+    }
+    if start:
+        headers['Content-Range'] = f'bytes {start}-{len(content) - 1}/{len(content)}'
+    request = urllib.request.Request(
         upload_url,
-        data=content,
+        data=content[start:],
+        headers=headers,
+        method='PUT',
+    )
+    return _request_json(request)
+
+
+def _resume_upload(upload_url, access_token, source_mime_type, content, initial_error):
+    last_error = initial_error
+    for attempt in range(RESUMABLE_UPLOAD_MAX_ATTEMPTS):
+        if attempt:
+            time.sleep(2 ** (attempt - 1))
+        try:
+            result, range_header = _query_upload_status(
+                upload_url,
+                access_token,
+                len(content),
+            )
+        except GoogleDriveError as exc:
+            if (
+                not _is_resumable_upload_error(exc)
+                or attempt == RESUMABLE_UPLOAD_MAX_ATTEMPTS - 1
+            ):
+                raise
+            last_error = exc
+            continue
+        if result is not None:
+            return result
+
+        start = _upload_offset(range_header, len(content))
+        if start == len(content):
+            continue
+        try:
+            return _upload_content(
+                upload_url,
+                access_token,
+                source_mime_type,
+                content,
+                start=start,
+            )
+        except GoogleDriveError as exc:
+            if not _is_resumable_upload_error(exc) and exc.status_code != 308:
+                raise
+            last_error = exc
+
+    raise last_error
+
+
+def _query_upload_status(upload_url, access_token, content_length):
+    request = urllib.request.Request(
+        upload_url,
+        data=b'',
         headers={
             'Authorization': f'Bearer {access_token}',
-            'Content-Type': source_mime_type,
-            'Content-Length': str(len(content)),
+            'Content-Length': '0',
+            'Content-Range': f'bytes */{content_length}',
         },
         method='PUT',
     )
-    result = _request_json(upload_request)
-    file_id = result.get('id')
-    if not isinstance(file_id, str) or not file_id:
-        raise GoogleDriveError('Google Drive did not return a file ID.')
-    return file_id, _google_view_link(result.get('webViewLink'))
+    with _open_google_request(request, allow_incomplete=True) as response:
+        if response.code == 308:
+            return None, response.headers.get('Range')
+        try:
+            result = json.loads(response.read().decode('utf-8'))
+        except json.JSONDecodeError as exc:
+            raise GoogleDriveError('Google Drive returned an invalid response.') from exc
+    if not isinstance(result, dict):
+        raise GoogleDriveError('Google Drive returned an invalid response.')
+    return result, None
+
+
+def _upload_offset(range_header, content_length):
+    if range_header is None:
+        return 0
+    prefix = 'bytes=0-'
+    if not range_header.startswith(prefix):
+        raise GoogleDriveError('Google Drive returned an invalid upload range.')
+    try:
+        offset = int(range_header[len(prefix):]) + 1
+    except ValueError as exc:
+        raise GoogleDriveError('Google Drive returned an invalid upload range.') from exc
+    if offset > content_length:
+        raise GoogleDriveError('Google Drive returned an invalid upload range.')
+    return offset
+
+
+def _is_resumable_upload_error(error):
+    return error.status_code is None or 500 <= error.status_code < 600
+
+
+def _is_expired_upload_session_error(error):
+    return error.status_code is not None and 400 <= error.status_code < 500
 
 
 def _request_json(request, *, authorization_error=False):
@@ -150,10 +289,17 @@ def _request_json(request, *, authorization_error=False):
     return result
 
 
-def _open_google_request(request, *, authorization_error=False):
+def _open_google_request(
+    request,
+    *,
+    authorization_error=False,
+    allow_incomplete=False,
+):
     try:
         return urllib.request.urlopen(request, timeout=60)
     except urllib.error.HTTPError as exc:
+        if allow_incomplete and exc.code == 308:
+            return exc
         details = exc.read().decode('utf-8', errors='replace')
         try:
             error_data = json.loads(details)

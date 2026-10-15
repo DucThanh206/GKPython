@@ -665,6 +665,44 @@ class DocumentFlowTests(TestCase):
         uploaded = Document.objects.get(title='Tài liệu mới')
         self.assertEqual(uploaded.status, Document.Status.PENDING)
 
+    def test_upload_blocks_a_file_with_content_already_in_the_library(self):
+        self.client.force_login(self.other_user)
+        response = self.client.post(
+            reverse('document_upload'),
+            {
+                'title': 'Bản sao tài liệu',
+                'description': '',
+                'subject': 'Toán',
+                'category': self.category.pk,
+                'visibility': Document.Visibility.PUBLIC,
+                'file': SimpleUploadedFile('renamed-copy.pdf', b'example document'),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'không thể gửi duyệt thêm')
+        self.assertFalse(Document.objects.filter(title='Bản sao tài liệu').exists())
+
+    def test_upload_accepts_same_name_and_size_when_file_content_differs(self):
+        self.client.force_login(self.other_user)
+        response = self.client.post(
+            reverse('document_upload'),
+            {
+                'title': 'Tài liệu cập nhật',
+                'description': '',
+                'subject': 'Toán',
+                'category': self.category.pk,
+                'visibility': Document.Visibility.PUBLIC,
+                'file': SimpleUploadedFile('algebra.pdf', b'Example document'),
+            },
+        )
+
+        self.assertRedirects(response, reverse('document_list'))
+        uploaded = Document.objects.get(title='Tài liệu cập nhật')
+        self.assertEqual(uploaded.original_filename, 'algebra.pdf')
+        self.assertEqual(uploaded.file_size, len(b'Example document'))
+        self.assertNotEqual(uploaded.file_sha256, self.document.file_sha256)
+
     def test_upload_can_create_a_new_category(self):
         self.client.force_login(self.user)
         response = self.client.post(

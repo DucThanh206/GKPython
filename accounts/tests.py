@@ -142,6 +142,182 @@ class AccountFlowTests(TestCase):
         self.assertEqual(upload_request.get_method(), 'PUT')
         self.assertEqual(upload_request.data, b'office-content')
 
+    def test_google_drive_upload_resumes_after_transient_server_error(self):
+        initiation_response = MagicMock()
+        initiation_response.__enter__.return_value.headers.get.return_value = (
+            'https://www.googleapis.com/upload/drive/v3/files?upload_id=one-time-id'
+        )
+        transient_error = urllib.error.HTTPError(
+            'https://www.googleapis.com/upload/drive/v3/files',
+            500,
+            'Internal Server Error',
+            {},
+            BytesIO(
+                b'{"error":{"message":"Internal error","errors":'
+                b'[{"reason":"internalError"}],"status":"INTERNAL"}}'
+            ),
+        )
+        incomplete_error = urllib.error.HTTPError(
+            'https://www.googleapis.com/upload/drive/v3/files',
+            308,
+            'Resume Incomplete',
+            {'Range': 'bytes=0-3'},
+            BytesIO(),
+        )
+        upload_response = MagicMock()
+        upload_response.__enter__.return_value.read.return_value = (
+            b'{"id":"presentation-id",'
+            b'"webViewLink":"https://slides.google.com/presentation/d/presentation-id/edit"}'
+        )
+
+        with (
+            patch(
+                'accounts.google_drive.urllib.request.urlopen',
+                side_effect=[
+                    initiation_response,
+                    transient_error,
+                    incomplete_error,
+                    upload_response,
+                ],
+            ) as urlopen,
+            patch('accounts.google_drive.time.sleep') as sleep,
+        ):
+            result = upload_file(
+                'access-token',
+                'Slides.pptx',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.google-apps.presentation',
+                b'0123456789',
+            )
+
+        self.assertEqual(
+            result,
+            (
+                'presentation-id',
+                'https://slides.google.com/presentation/d/presentation-id/edit',
+            ),
+        )
+        status_request = urlopen.call_args_list[2].args[0]
+        resumed_request = urlopen.call_args_list[3].args[0]
+        self.assertEqual(status_request.get_header('Content-range'), 'bytes */10')
+        self.assertEqual(resumed_request.data, b'456789')
+        self.assertEqual(
+            resumed_request.get_header('Content-range'),
+            'bytes 4-9/10',
+        )
+        sleep.assert_not_called()
+
+    def test_google_drive_upload_restarts_session_after_http_410(self):
+        first_session = MagicMock()
+        first_session.__enter__.return_value.headers.get.return_value = (
+            'https://www.googleapis.com/upload/drive/v3/files?upload_id=expired-id'
+        )
+        second_session = MagicMock()
+        second_session.__enter__.return_value.headers.get.return_value = (
+            'https://www.googleapis.com/upload/drive/v3/files?upload_id=new-id'
+        )
+        expired_session_error = urllib.error.HTTPError(
+            'https://www.googleapis.com/upload/drive/v3/files',
+            410,
+            'Gone',
+            {},
+            BytesIO(
+                b'{"error":{"message":"Upload session expired",'
+                b'"errors":[{"reason":"internalError"}],"status":"GONE"}}'
+            ),
+        )
+        upload_response = MagicMock()
+        upload_response.__enter__.return_value.read.return_value = (
+            b'{"id":"presentation-id",'
+            b'"webViewLink":"https://slides.google.com/presentation/d/presentation-id/edit"}'
+        )
+
+        with patch(
+            'accounts.google_drive.urllib.request.urlopen',
+            side_effect=[
+                first_session,
+                expired_session_error,
+                second_session,
+                upload_response,
+            ],
+        ) as urlopen:
+            result = upload_file(
+                'access-token',
+                'Slides.pptx',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.google-apps.presentation',
+                b'pptx-content',
+            )
+
+        self.assertEqual(
+            result,
+            (
+                'presentation-id',
+                'https://slides.google.com/presentation/d/presentation-id/edit',
+            ),
+        )
+        self.assertEqual(urlopen.call_count, 4)
+        self.assertIn('expired-id', urlopen.call_args_list[1].args[0].full_url)
+        self.assertIn('new-id', urlopen.call_args_list[3].args[0].full_url)
+        self.assertEqual(urlopen.call_args_list[1].args[0].data, b'pptx-content')
+        self.assertEqual(urlopen.call_args_list[3].args[0].data, b'pptx-content')
+
+    def test_google_drive_upload_restarts_when_status_check_returns_http_410(self):
+        first_session = MagicMock()
+        first_session.__enter__.return_value.headers.get.return_value = (
+            'https://www.googleapis.com/upload/drive/v3/files?upload_id=expired-id'
+        )
+        second_session = MagicMock()
+        second_session.__enter__.return_value.headers.get.return_value = (
+            'https://www.googleapis.com/upload/drive/v3/files?upload_id=new-id'
+        )
+        server_error = urllib.error.HTTPError(
+            'https://www.googleapis.com/upload/drive/v3/files',
+            500,
+            'Internal Server Error',
+            {},
+            BytesIO(b'{"error":{"status":"INTERNAL"}}'),
+        )
+        expired_session_error = urllib.error.HTTPError(
+            'https://www.googleapis.com/upload/drive/v3/files',
+            410,
+            'Gone',
+            {},
+            BytesIO(b'{"error":{"errors":[{"reason":"internalError"}]}}'),
+        )
+        upload_response = MagicMock()
+        upload_response.__enter__.return_value.read.return_value = (
+            b'{"id":"presentation-id",'
+            b'"webViewLink":"https://slides.google.com/presentation/d/presentation-id/edit"}'
+        )
+
+        with (
+            patch(
+                'accounts.google_drive.urllib.request.urlopen',
+                side_effect=[
+                    first_session,
+                    server_error,
+                    expired_session_error,
+                    second_session,
+                    upload_response,
+                ],
+            ) as urlopen,
+            patch('accounts.google_drive.time.sleep'),
+        ):
+            result = upload_file(
+                'access-token',
+                'Slides.pptx',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'application/vnd.google-apps.presentation',
+                b'pptx-content',
+            )
+
+        self.assertEqual(result[0], 'presentation-id')
+        self.assertEqual(urlopen.call_count, 5)
+        self.assertIn('expired-id', urlopen.call_args_list[1].args[0].full_url)
+        self.assertEqual(urlopen.call_args_list[2].args[0].get_method(), 'PUT')
+        self.assertIn('new-id', urlopen.call_args_list[4].args[0].full_url)
+
     def test_google_drive_open_link_rejects_untrusted_hosts(self):
         with self.assertRaises(GoogleDriveError):
             _google_view_link('https://attacker.example/document')

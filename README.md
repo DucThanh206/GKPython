@@ -71,7 +71,7 @@ media/          # Tài liệu người dùng tải lên (không commit lên git)
 
 - [x] Đăng ký, đăng nhập/đăng xuất và cập nhật hồ sơ cá nhân
 - [x] Tìm kiếm tài liệu theo từng từ khóa trong tiêu đề, mô tả, môn học và danh mục; duyệt theo danh mục
-- [x] Đăng tài liệu theo danh mục có sẵn hoặc tạo danh mục mới; kiểm duyệt và phân quyền hiển thị công khai/yêu cầu đăng nhập
+- [x] Đăng tài liệu theo danh mục có sẵn hoặc tạo danh mục mới; tự động chặn tệp trùng nội dung trước kiểm duyệt và phân quyền hiển thị công khai/yêu cầu đăng nhập
 - [x] Hiện nội dung PDF, DOCX và các tệp văn bản TXT/Markdown/CSV trên trang chi tiết
 - [x] Ghi nhận lượt xem, lượt tải và danh sách tài liệu đã tải xuống
 - [x] Bình luận một chiều, sửa/xóa bình luận của chính mình và đánh giá một lần
@@ -84,7 +84,9 @@ media/          # Tài liệu người dùng tải lên (không commit lên git)
 Tài khoản mới có vai trò thành viên. Để cấp quyền quản trị viên, đăng nhập vào
 Django admin và đổi trường **Vai trò** của tài khoản thành **Quản trị viên**
 (hoặc dùng tài khoản superuser). Tài liệu tải lên ở trạng thái chờ duyệt; quản
-trị viên duyệt tại trang **Duyệt tài liệu** trên thanh điều hướng.
+trị viên duyệt tại trang **Duyệt tài liệu** trên thanh điều hướng. Hệ thống tự
+đối chiếu tên tệp, kích thước và dấu vân tay nội dung; tệp có cùng nội dung với
+tài liệu đã được duyệt hoặc đang chờ duyệt sẽ bị chặn trước khi vào hàng kiểm duyệt.
 
 Sau khi nạp dữ liệu mẫu, đăng nhập bằng `demo_admin` để duyệt tài liệu và xử lý
 báo cáo; `demo_member` dùng để thử các luồng thành viên. Cả hai dùng mật khẩu
