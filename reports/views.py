@@ -9,7 +9,7 @@ UC14 - Thống kê, báo cáo           -> statistics_dashboard, export_statisti
 from datetime import date, timedelta
 import logging
 import smtplib
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from django.apps import apps
 from django.conf import settings
@@ -516,6 +516,7 @@ def download_statistics_report(request, pk):
 def _export_xlsx(report_type, period_start, period_end, data):
     """Xuất báo cáo dạng Excel bằng openpyxl."""
     from openpyxl import Workbook
+    from openpyxl.styles import Alignment
 
     wb = Workbook()
     ws = wb.active
@@ -533,9 +534,19 @@ def _export_xlsx(report_type, period_start, period_end, data):
         if isinstance(value, list):
             ws.append([_statistic_label(key), ""])
             for row in value:
-                ws.append(["", str(row)])
+                ws.append(["", _format_export_row(row)])
         else:
             ws.append([_statistic_label(key), value])
+
+    for column in ws.columns:
+        column_letter = column[0].column_letter
+        content_width = max(
+            (len(str(cell.value)) for cell in column if cell.value is not None),
+            default=0,
+        )
+        ws.column_dimensions[column_letter].width = min(content_width + 2, 60)
+        for cell in column:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     from io import BytesIO
 
@@ -553,43 +564,115 @@ def _export_pdf(report_type, period_start, period_end, data):
     from io import BytesIO
 
     from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+    from xml.sax.saxutils import escape
 
     buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=A4)
-    width, height = A4
+    regular_font, bold_font = _register_pdf_fonts()
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+    )
+    title_style = ParagraphStyle(
+        "ReportTitle",
+        fontName=bold_font,
+        fontSize=14,
+        leading=18,
+        spaceAfter=10,
+    )
+    body_style = ParagraphStyle(
+        "ReportBody",
+        fontName=regular_font,
+        fontSize=11,
+        leading=15,
+        spaceAfter=6,
+        splitLongWords=1,
+    )
+    item_style = ParagraphStyle(
+        "ReportItem",
+        parent=body_style,
+        leftIndent=10 * mm,
+    )
 
-    y = height - 50
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(50, y, f"Báo cáo thống kê: {report_type}")
-    y -= 25
-    p.setFont("Helvetica", 11)
-    p.drawString(50, y, f"Khoảng thời gian: {period_start} - {period_end}")
-    y -= 20
-    p.drawString(50, y, f"Xuất lúc: {timezone.now():%d/%m/%Y %H:%M}")
-    y -= 30
-
+    story = [
+        Paragraph(escape(f"Báo cáo thống kê: {report_type}"), title_style),
+        Paragraph(
+            escape(f"Khoảng thời gian: {period_start} - {period_end}"),
+            body_style,
+        ),
+        Paragraph(
+            escape(f"Xuất lúc: {timezone.now():%d/%m/%Y %H:%M}"),
+            body_style,
+        ),
+        Spacer(1, 8),
+    ]
     for key, value in data.items():
         if key == "report_type":
             continue
-        if y < 60:
-            p.showPage()
-            y = height - 50
-            p.setFont("Helvetica", 11)
         if isinstance(value, list):
-            p.drawString(50, y, f"{_statistic_label(key)}:")
-            y -= 18
+            story.append(Paragraph(escape(f"{_statistic_label(key)}:"), body_style))
             for row in value:
-                p.drawString(70, y, f"- {row}")
-                y -= 16
+                story.append(
+                    Paragraph(escape(f"- {_format_export_row(row)}"), item_style)
+                )
         else:
-            p.drawString(50, y, f"{_statistic_label(key)}: {value}")
-            y -= 18
+            story.append(
+                Paragraph(escape(f"{_statistic_label(key)}: {value}"), body_style)
+            )
 
-    p.showPage()
-    p.save()
+    document.build(story)
     buffer.seek(0)
     return HttpResponse(buffer.read(), content_type="application/pdf")
+
+
+def _format_export_row(row):
+    if isinstance(row, dict) and "status" in row and "total" in row:
+        return f"{row['status']}: {row['total']}"
+    return str(row)
+
+
+def _register_pdf_fonts():
+    """Register an installed TrueType font with Vietnamese glyph coverage."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    font_pairs = (
+        (
+            settings.BASE_DIR / "reports" / "fonts" / "NotoSans-Regular.ttf",
+            settings.BASE_DIR / "reports" / "fonts" / "NotoSans-Bold.ttf",
+        ),
+        (Path(r"C:\Windows\Fonts\arial.ttf"), Path(r"C:\Windows\Fonts\arialbd.ttf")),
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf"),
+        ),
+        (
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+        ),
+    )
+    for regular_path, bold_path in font_pairs:
+        if regular_path.is_file() and bold_path.is_file():
+            regular_name = "StatisticsReportRegular"
+            bold_name = "StatisticsReportBold"
+            pdfmetrics.registerFont(TTFont(regular_name, str(regular_path)))
+            pdfmetrics.registerFont(TTFont(bold_name, str(bold_path)))
+            return regular_name, bold_name
+
+    raise FileNotFoundError(
+        "A Unicode TrueType font is required to export Vietnamese PDF reports. "
+        "Install Noto Sans, DejaVu Sans, or Arial."
+    )
 
 
 def _statistic_label(key):

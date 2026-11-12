@@ -72,8 +72,8 @@
     <div class="col-12">
         <div class="empty-state">
             <span class="empty-state-mark" aria-hidden="true">⌕</span>
-            <h3 class="h5 mb-2">{% if request.GET.q %}Chưa tìm thấy tài liệu phù hợp{% else %}Thư viện đang chờ tài liệu đầu tiên{% endif %}</h3>
-            <p class="text-muted mb-0">{% if request.GET.q %}Thử từ khóa khác hoặc chọn một danh mục rộng hơn.{% else %}Hãy quay lại sau hoặc chia sẻ tài liệu học tập đầu tiên của bạn.{% endif %}</p>
+            <h3 class="h5 mb-2">{% if request.GET.q or request.GET.category %}Chưa tìm thấy tài liệu phù hợp{% else %}Thư viện đang chờ tài liệu đầu tiên{% endif %}</h3>
+            <p class="text-muted mb-0">{% if request.GET.q or request.GET.category %}Thử từ khóa khác hoặc chọn một danh mục rộng hơn.{% else %}Hãy quay lại sau hoặc chia sẻ tài liệu học tập đầu tiên của bạn.{% endif %}</p>
         </div>
     </div>
     {% endfor %}

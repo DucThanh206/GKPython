@@ -51,7 +51,7 @@ class DocumentListView(ListView):
                         | Q(subject__icontains=term)
                         | Q(category__name__icontains=term)
                     )
-            else:
+            elif not self.request.GET.get('category'):
                 qs = qs.none()
         category = self.request.GET.get('category')
         if category:
@@ -61,7 +61,11 @@ class DocumentListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['categories'] = Category.objects.all()
-        context['search_empty'] = 'q' in self.request.GET and not self.request.GET['q'].strip()
+        context['search_empty'] = (
+            'q' in self.request.GET
+            and not self.request.GET['q'].strip()
+            and not self.request.GET.get('category')
+        )
         return context
 
 

@@ -26,6 +26,8 @@ class ProfileForm(forms.ModelForm):
             'full_name': forms.TextInput(attrs={'class': 'form-control'}),
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
             'school': forms.TextInput(attrs={'class': 'form-control'}),
-            'avatar': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'avatar': forms.ClearableFileInput(
+                attrs={'class': 'form-control', 'accept': 'image/*'}
+            ),
             'bio': forms.Textarea(attrs={'class': 'form-control', 'rows': 4}),
         }

@@ -62,6 +62,23 @@ class DocumentFlowTests(TestCase):
         self.assertContains(response, 'Đại số cơ bản')
         self.assertNotContains(response, 'Tài liệu chờ duyệt')
 
+    def test_category_filter_works_without_search_keyword(self):
+        other_category = Category.objects.create(name='Vật lý', slug='vat-ly')
+        other_document = Document.objects.create(
+            title='Cơ học cơ bản',
+            category=other_category,
+            file=SimpleUploadedFile('physics.pdf', b'physics'),
+            uploader=self.other_user,
+            status=Document.Status.APPROVED,
+        )
+
+        response = self.client.get(reverse('document_list'), {'q': '', 'category': 'toan'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.document.title)
+        self.assertNotContains(response, other_document.title)
+        self.assertNotContains(response, 'Vui lòng nhập từ khóa tìm kiếm.')
+
     def test_pending_upload_is_hidden_from_library_even_for_uploader(self):
         Document.objects.create(
             title='Tài liệu chưa được duyệt',

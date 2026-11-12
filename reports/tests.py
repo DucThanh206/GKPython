@@ -1,5 +1,6 @@
 import tempfile
 from datetime import timedelta
+from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.core import mail
@@ -9,6 +10,7 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from openpyxl import load_workbook
 
 from documents.models import Document
 
@@ -146,6 +148,15 @@ class ViolationAndStatisticsTests(TestCase):
             response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        self.assertGreater(worksheet.column_dimensions['A'].width, 13)
+        exported_values = {
+            cell.value for row in worksheet.iter_rows() for cell in row
+        }
+        self.assertIn('Tổng tài liệu (toàn thời gian)', exported_values)
+        self.assertIn('approved: 1', exported_values)
+        self.assertFalse(any("'status':" in str(value) for value in exported_values))
         report = StatisticsReport.objects.get()
         self.assertTrue(default_storage.exists(report.file_path))
         self.assertTrue(report.file_path.startswith('exports/'))
@@ -174,6 +185,24 @@ class ViolationAndStatisticsTests(TestCase):
             ).status_code,
             404,
         )
+
+    def test_pdf_export_embeds_unicode_font_for_vietnamese_text(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(
+            reverse('reports:export_statistics_report'),
+            {
+                'report_type': StatisticsReport.ReportType.OVERVIEW,
+                'period_start': '2026-01-01',
+                'period_end': '2026-12-31',
+                'file_format': 'pdf',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn(b'/FontFile2', response.content)
+        self.assertIn(b'/ToUnicode', response.content)
 
     def test_expired_exports_are_removed_with_their_history(self):
         from django.core.files.base import ContentFile

@@ -45,25 +45,24 @@ App Django này hiện thực đầy đủ 3 use case được giao:
 
 ## 3. Database
 
-- Bảng `violation_reports` và `statistics_reports` đã có sẵn trong
-  `schemaThuVien.sql`. Migration `0001_initial.py` được viết để **khớp
-  chính xác** với schema đó (tên bảng, tên cột, index).
-- Nếu bạn chạy `schemaThuVien.sql` để tạo bảng trước, hãy đánh dấu migration
-  là đã áp dụng mà không chạy SQL tạo bảng lại:
-  ```bash
-  python manage.py migrate reports --fake-initial
-  ```
-- Nếu để Django tự tạo bảng qua migration (không chạy phần `CREATE TABLE
-  violation_reports/statistics_reports` trong file .sql), chạy bình thường:
-  ```bash
-  python manage.py migrate reports
-  ```
+Các bảng của app này được tạo bởi Django migrations cùng với các app khác:
+
+```bash
+python manage.py migrate
+```
+
+Các bảng được quản lý bằng Django migrations; không tạo bảng thủ công hay dùng
+`--fake-initial`. Cấu hình PostgreSQL và kết nối DBeaver được hướng dẫn tại
+[`sql/POSTGRESQL_DBEAVER.md`](../sql/POSTGRESQL_DBEAVER.md).
 
 ## 4. Xuất báo cáo (UC14)
 
 Các thư viện `openpyxl` và `reportlab` đã được khai báo trong
 `requirements.txt`; cài đặt chúng cùng các phụ thuộc khác bằng
 `pip install -r requirements.txt`.
+Xuất PDF cần font TrueType Unicode hỗ trợ tiếng Việt: ứng dụng tự tìm Noto Sans,
+DejaVu Sans hoặc Arial trên máy chạy Django. Nếu không tìm thấy font phù hợp,
+hãy cài một trong các font này trước khi xuất PDF.
 
 Các tệp xuất được lưu riêng trong `MEDIA_ROOT/exports/`, chỉ Admin tạo báo cáo
 mới có thể tải lại. Bản xuất hết hạn sau 90 ngày. Lên lịch chạy lệnh sau mỗi
@@ -81,7 +80,7 @@ Lưu ý: thư mục media cần nằm trên persistent storage được sao lưu
 Production bắt buộc đặt `APP_ENV=production`, `DJANGO_SECRET_KEY`,
 `DJANGO_ALLOWED_HOSTS`, `MEDIA_ROOT`, `EMAIL_HOST` và `ADMIN_EMAILS` (danh sách
 email phân tách bằng dấu phẩy). `DJANGO_DEBUG` phải là
-`false`. Cơ sở dữ liệu dùng PostgreSQL và cần các biến `DB_NAME`, `DB_USER`,
+`false`. Production mặc định dùng PostgreSQL; cần các biến `DB_NAME`, `DB_USER`,
 `DB_PASSWORD`, `DB_HOST` (có thể đặt `DB_PORT`, mặc định `5432`). Email SMTP
 hỗ trợ `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`,
 `EMAIL_USE_SSL` và `DEFAULT_FROM_EMAIL`. Không lưu bí mật trong Git.
@@ -99,7 +98,7 @@ reverse proxy giới hạn request body tối đa theo `MAX_DOCUMENT_UPLOAD_SIZE
 (mặc định 25 MiB) cùng phần overhead multipart. Giới hạn ứng dụng cho phép
 PDF, DOC/DOCX, PPT/PPTX, XLS/XLSX, TXT, Markdown và CSV. Bật TLS ở reverse
 proxy và thiết lập `DJANGO_CSRF_TRUSTED_ORIGINS` cho các origin HTTPS của hệ
-thống. Sao lưu và thử khôi phục cả PostgreSQL lẫn media trước phát hành.
+thống. Sao lưu và thử khôi phục database cùng media trước phát hành.
 Reverse proxy phải ghi đè `X-Forwarded-Proto` bằng scheme thực của kết nối;
 không để client bên ngoài tự gửi giá trị header này tới ứng dụng.
 

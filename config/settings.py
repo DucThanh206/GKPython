@@ -16,6 +16,21 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load local, git-ignored environment settings for commands started outside the
+# developer's configured shell (for example, management commands run by an IDE).
+ENV_FILE = BASE_DIR / ".env"
+if ENV_FILE.is_file():
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key:
+            os.environ.setdefault(key, value)
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
@@ -114,17 +129,27 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+# Database. SQLite remains the zero-configuration local default.
+DB_ENGINE = os.environ.get(
+    "DB_ENGINE",
+    "django.db.backends.postgresql" if IS_PRODUCTION else "django.db.backends.sqlite3",
+).strip().lower()
 
-if IS_PRODUCTION or os.environ.get("DB_ENGINE") == "django.db.backends.postgresql":
+if DB_ENGINE == "django.db.backends.sqlite3":
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.postgresql",
+            "ENGINE": DB_ENGINE,
+            "NAME": os.environ.get("DB_NAME", str(BASE_DIR / "db.sqlite3")),
+        }
+    }
+elif DB_ENGINE == "django.db.backends.postgresql":
+    DATABASES = {
+        "default": {
+            "ENGINE": DB_ENGINE,
             "NAME": os.environ.get("DB_NAME", ""),
             "USER": os.environ.get("DB_USER", ""),
             "PASSWORD": os.environ.get("DB_PASSWORD", ""),
-            "HOST": os.environ.get("DB_HOST", ""),
+            "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
             "PORT": os.environ.get("DB_PORT", "5432"),
             "CONN_MAX_AGE": int(os.environ.get("DB_CONN_MAX_AGE", "60")),
         }
@@ -146,12 +171,10 @@ if IS_PRODUCTION or os.environ.get("DB_ENGINE") == "django.db.backends.postgresq
                 + ", ".join(missing_database)
             )
 else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+    raise RuntimeError(
+        "Unsupported DB_ENGINE. Use django.db.backends.sqlite3 or "
+        "django.db.backends.postgresql."
+    )
 
 
 # Password validation

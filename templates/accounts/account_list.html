@@ -12,17 +12,18 @@
         <tbody>
         {% for account in users %}
             <tr>
-                <td><div class="account-cell"><span class="author-mark" aria-hidden="true">{{ account.username|slice:"0:1"|upper }}</span><div><strong>{{ account.full_name|default:account.username }}</strong><small>@{{ account.username }}</small></div></div></td>
+                <td><div class="account-cell"><span class="author-mark" aria-hidden="true">{{ account.username|slice:"0:1"|upper }}</span><div><strong>{{ account.full_name|default:account.username }}</strong></div></div></td>
                 <td>{{ account.email|default:"—" }}</td>
-                <td><span class="role-label">{{ account.get_role_display }}</span></td>
+                <td><span class="role-label">{% if account.is_superuser %}Quản trị viên{% else %}{{ account.get_role_display }}{% endif %}</span></td>
                 <td>{% if account.is_active %}<span class="status-pill status-approved">Đang hoạt động</span>{% else %}<span class="status-pill status-rejected">Đã khóa</span>{% endif %}</td>
                 <td>
-                    {% if account.pk != user.pk %}
+                    {% if account.role == 'member' and not account.is_superuser and account.pk != user.pk %}
                     <form method="post" action="{% url 'toggle_account_status' account.pk %}">
                         {% csrf_token %}
                         <button class="btn btn-sm {% if account.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}" type="submit">{% if account.is_active %}Khóa tài khoản{% else %}Mở khóa{% endif %}</button>
                     </form>
-                    {% else %}<span class="text-muted small">Tài khoản của bạn</span>{% endif %}
+                    {% elif account.pk == user.pk %}<span class="text-muted small">Tài khoản của bạn</span>
+                    {% else %}<span class="text-muted small">Không thể khóa quản trị viên</span>{% endif %}
                 </td>
             </tr>
         {% empty %}<tr><td colspan="5" class="text-center text-muted py-5">Chưa có tài khoản nào.</td></tr>{% endfor %}

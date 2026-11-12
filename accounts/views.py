@@ -235,6 +235,8 @@ def toggle_account_status(request, pk):
     account = get_object_or_404(User, pk=pk)
     if account.pk == request.user.pk:
         messages.error(request, 'Bạn không thể khóa tài khoản của chính mình.')
+    elif account.is_superuser or account.role != User.Role.MEMBER:
+        messages.error(request, 'Chỉ có thể thay đổi trạng thái tài khoản thành viên.')
     else:
         account.is_active = not account.is_active
         account.save(update_fields=['is_active'])

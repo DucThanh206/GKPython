@@ -1,7 +1,12 @@
+from io import BytesIO
+from tempfile import TemporaryDirectory
+
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import reverse
+from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 from unittest.mock import patch
 
 User = get_user_model()
@@ -34,6 +39,36 @@ class AccountFlowTests(TestCase):
         self.assertEqual(self.member.email, 'an@example.com')
         self.assertEqual(self.client.get(reverse('profile')).status_code, 200)
 
+    def test_profile_uploads_and_previews_avatar_image(self):
+        image_buffer = BytesIO()
+        Image.new('RGB', (1, 1), color='blue').save(image_buffer, format='PNG')
+        image = SimpleUploadedFile(
+            'avatar.png', image_buffer.getvalue(), content_type='image/png'
+        )
+        self.client.force_login(self.member)
+
+        with TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                response = self.client.post(
+                    reverse('profile'),
+                    {
+                        'full_name': 'Nguyễn An',
+                        'email': 'an@example.com',
+                        'school': '',
+                        'bio': '',
+                        'avatar': image,
+                    },
+                )
+                self.assertRedirects(response, reverse('profile'))
+
+                self.member.refresh_from_db()
+                self.assertTrue(self.member.avatar.name.startswith('avatars/'))
+                response = self.client.get(reverse('profile'))
+
+        self.assertContains(response, f'<img id="avatar-preview"')
+        self.assertContains(response, self.member.avatar.url)
+        self.assertNotContains(response, 'Currently:')
+
     def test_admin_can_lock_other_users_but_member_cannot_access(self):
         response = self.client.get(reverse('account_list'))
         self.assertRedirects(response, f"/login/?next={reverse('account_list')}")
@@ -49,6 +84,63 @@ class AccountFlowTests(TestCase):
         self.assertRedirects(response, reverse('account_list'))
         self.member.refresh_from_db()
         self.assertFalse(self.member.is_active)
+
+    def test_admin_cannot_lock_or_unlock_another_admin(self):
+        another_admin = User.objects.create_user(
+            username='another-admin',
+            password='secret12345',
+            role=User.Role.ADMIN,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('account_list'))
+        self.assertNotContains(response, 'Tên đăng nhập: another-admin')
+        self.assertContains(response, 'Không thể khóa quản trị viên')
+        self.assertNotContains(response, reverse(
+            'toggle_account_status', args=[another_admin.pk]
+        ))
+
+        response = self.client.post(
+            reverse('toggle_account_status', args=[another_admin.pk])
+        )
+        self.assertRedirects(response, reverse('account_list'))
+        another_admin.refresh_from_db()
+        self.assertTrue(another_admin.is_active)
+
+        another_admin.is_active = False
+        another_admin.save(update_fields=['is_active'])
+        self.client.post(reverse('toggle_account_status', args=[another_admin.pk]))
+        another_admin.refresh_from_db()
+        self.assertFalse(another_admin.is_active)
+
+    def test_account_list_uses_profile_name_and_shows_superuser_as_admin(self):
+        self.member.username = 'demo_member01'
+        self.member.full_name = 'Doan Minh Tri'
+        self.member.save(update_fields=['username', 'full_name'])
+        superuser_member_role = User.objects.create_user(
+            username='admin_01',
+            email='admin01@example.com',
+            password='secret12345',
+            role=User.Role.MEMBER,
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse('account_list'))
+
+        self.assertContains(response, 'Doan Minh Tri')
+        self.assertNotContains(response, 'Tên đăng nhập: demo_member01')
+        self.assertEqual(response.content.decode().count('Quản trị viên'), 2)
+        self.assertNotContains(
+            response, reverse('toggle_account_status', args=[superuser_member_role.pk])
+        )
+
+        self.client.post(
+            reverse('toggle_account_status', args=[superuser_member_role.pk])
+        )
+        superuser_member_role.refresh_from_db()
+        self.assertTrue(superuser_member_role.is_active)
 
     @override_settings(
         GOOGLE_OAUTH_CLIENT_ID='client-id',

@@ -4,16 +4,38 @@
 <div class="row justify-content-center">
     <div class="col-lg-8">
         <header class="profile-heading">
-            <div class="profile-avatar" aria-hidden="true">{{ user.full_name|default:user.username|slice:"0:1"|upper }}</div>
+            <button type="button" id="avatar-view-button" class="profile-avatar"
+                    aria-label="Xem toàn ảnh đại diện" {% if not user.avatar %}disabled{% endif %}>
+                <img id="avatar-preview" class="profile-avatar-image" alt="Ảnh đại diện"
+                     {% if user.avatar %}src="{{ user.avatar.url }}"{% else %}hidden{% endif %}>
+                <span id="avatar-initial" aria-hidden="true"
+                      {% if user.avatar %}hidden{% endif %}>{{ user.full_name|default:user.username|slice:"0:1"|upper }}</span>
+            </button>
             <div><div class="eyebrow">Tài khoản EduHub</div><h1 class="mt-1 mb-1">Hồ sơ cá nhân</h1><p class="text-muted mb-0">Cập nhật thông tin để cộng đồng nhận biết bạn.</p></div>
         </header>
+        <dialog id="avatar-viewer" class="avatar-viewer" aria-label="Ảnh đại diện kích thước đầy đủ">
+            <button type="button" class="avatar-viewer-close" aria-label="Đóng">×</button>
+            <img id="avatar-viewer-image" alt="Ảnh đại diện kích thước đầy đủ">
+        </dialog>
         <section class="profile-surface">
             <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}
                 {% for field in form %}
                     <div class="profile-field">
                         <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-                        {{ field }}
+                        {% if field.name == 'avatar' %}
+                            <input type="file" name="{{ field.name }}" id="{{ field.id_for_label }}"
+                                   class="form-control" accept="image/*">
+                            {% if field.value %}
+                                <div class="form-check mt-2">
+                                    <input type="checkbox" name="{{ field.name }}-clear"
+                                           id="{{ field.auto_id }}-clear_id" class="form-check-input">
+                                    <label class="form-check-label" for="{{ field.auto_id }}-clear_id">Xóa ảnh hiện tại</label>
+                                </div>
+                            {% endif %}
+                        {% else %}
+                            {{ field }}
+                        {% endif %}
                         {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
                         {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
                     </div>
@@ -31,7 +53,15 @@
 <style>
     .profile-heading { display: flex; align-items: center; gap: 16px; margin: 8px 0 24px; }
     .profile-heading h1 { font-size: 36px; }
-    .profile-avatar { display: grid; flex: 0 0 58px; width: 58px; height: 58px; place-items: center; border-radius: 50%; background: var(--warm); color: var(--copy); font-family: var(--font-display); font-size: 24px; }
+    .profile-avatar { display: grid; flex: 0 0 58px; width: 58px; height: 58px; place-items: center; overflow: hidden; border-radius: 50%; background: var(--warm); color: var(--copy); font-family: var(--font-display); font-size: 24px; }
+    button.profile-avatar { padding: 0; border: 0; cursor: pointer; }
+    button.profile-avatar:disabled { cursor: default; }
+    button.profile-avatar:not(:disabled):hover { outline: 2px solid var(--copy); outline-offset: 3px; }
+    .profile-avatar-image { width: 100%; height: 100%; object-fit: cover; }
+    .avatar-viewer { position: relative; max-width: min(92vw, 1100px); max-height: 92vh; padding: 48px 16px 16px; border: 0; border-radius: 12px; background: var(--paper); }
+    .avatar-viewer::backdrop { background: rgba(0,0,0,.78); }
+    .avatar-viewer img { display: block; max-width: calc(92vw - 32px); max-height: calc(92vh - 64px); object-fit: contain; }
+    .avatar-viewer-close { position: absolute; top: 8px; right: 12px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--warm); color: var(--copy); font-size: 24px; line-height: 1; cursor: pointer; }
     .profile-surface { padding: clamp(20px, 4vw, 34px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
     .profile-field { margin-bottom: 19px; }
     .profile-field textarea { min-height: 100px; }
@@ -40,4 +70,61 @@
     .connected-account strong { color: var(--copy); font-size: 13px; }
     .connected-account p { margin-top: 4px; color: var(--quiet); font-size: 12px; }
 </style>
+<script>
+    const avatarInput = document.getElementById('id_avatar');
+    const avatarPreview = document.getElementById('avatar-preview');
+    const avatarInitial = document.getElementById('avatar-initial');
+    const avatarClear = document.getElementById('id_avatar-clear_id');
+    const avatarViewButton = document.getElementById('avatar-view-button');
+    const avatarViewer = document.getElementById('avatar-viewer');
+    const avatarViewerImage = document.getElementById('avatar-viewer-image');
+    const avatarViewerClose = avatarViewer.querySelector('.avatar-viewer-close');
+    const savedAvatarUrl = {% if user.avatar %}'{{ user.avatar.url|escapejs }}'{% else %}''{% endif %};
+    let previewObjectUrl;
+
+    function showAvatar(src) {
+        avatarPreview.src = src;
+        avatarPreview.hidden = false;
+        avatarInitial.hidden = true;
+        avatarViewButton.disabled = false;
+    }
+
+    function showInitial() {
+        avatarPreview.hidden = true;
+        avatarInitial.hidden = false;
+        avatarViewButton.disabled = true;
+    }
+
+    avatarViewButton.addEventListener('click', () => {
+        if (avatarPreview.hidden) return;
+        avatarViewerImage.src = avatarPreview.src;
+        avatarViewer.showModal();
+    });
+
+    avatarViewerClose.addEventListener('click', () => avatarViewer.close());
+    avatarViewer.addEventListener('click', event => {
+        if (event.target === avatarViewer) avatarViewer.close();
+    });
+
+    avatarInput.addEventListener('change', () => {
+        const file = avatarInput.files[0];
+        if (!file) return;
+        if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = URL.createObjectURL(file);
+        if (avatarClear) avatarClear.checked = false;
+        showAvatar(previewObjectUrl);
+    });
+
+    if (avatarClear) {
+        avatarClear.addEventListener('change', () => {
+            if (avatarClear.checked) {
+                avatarInput.value = '';
+                if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+                showInitial();
+            } else {
+                showAvatar(savedAvatarUrl);
+            }
+        });
+    }
+</script>
 {% endblock %}
