@@ -3,3 +3,5 @@ Pillow>=10.0
 openpyxl>=3.1
 reportlab>=4.0
 psycopg[binary]>=3.1
+cryptography>=44.0
+python-dotenv>=1.0

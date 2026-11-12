@@ -7,17 +7,32 @@ Khi chạy local, ứng dụng mặc định dùng SQLite tại `db.sqlite3`. Da
 
 ## Cài đặt
 
+Khởi tạo môi trường lần đầu
 ```bash
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Truy cập http://127.0.0.1:8000
+Chạy ứng dụng
+```bash
+python manage.py migrate
+```
+
+Tạo tài khoản quản trị viên (admin)
+```bash
+python manage.py createsuperuser
+```
+Sau đó nhập tên người dùng, email và mật khẩu cho tài khoản này.
+
+Khởi động web app
+```bash
+python manage.py runserver
+```
+rồi truy cập 127.0.0.1:8000 .
 
 ### Tạo dữ liệu mẫu
 
@@ -67,6 +82,24 @@ migration chưa áp dụng, rồi `python manage.py runserver`. Cấu hình này
 tự chuyển dữ liệu từ `db.sqlite3` sang PostgreSQL; xem hướng dẫn
 [PostgreSQL và DBeaver](./sql/POSTGRESQL_DBEAVER.md) nếu cần chuyển dữ liệu.
 
+### Kết nối Google Drive (tùy chọn)
+
+Để mở tài liệu Office bằng Google Workspace, bật Google Drive API trong cùng
+Google Cloud project và thêm callback
+`http://127.0.0.1:8000/accounts/google/drive/callback/` vào OAuth Web Client.
+Đăng nhập EduHub chỉ hỗ trợ tên tài khoản và mật khẩu; Google OAuth chỉ dùng
+để kết nối Google Drive. Ứng dụng dùng scope `drive.file`: tệp được nhập thành
+bản sao riêng trong Drive của người đang mở tài liệu, không công khai và không
+thay đổi tệp gốc EduHub.
+
+Thiết lập `GOOGLE_DRIVE_REDIRECT_URI` nếu callback production không thể tự suy
+ra từ request. Bí mật refresh token được mã hóa bằng `DJANGO_SECRET_KEY`; giữ
+khóa này ổn định hoặc người dùng sẽ cần kết nối Drive lại khi khóa thay đổi.
+Trong môi trường local, mở file `.env` ở thư mục gốc và điền Google OAuth Client
+ID/Secret. File này được Git bỏ qua; `.env.example` là file mẫu không chứa bí
+mật. Django tự đọc `.env` khi khởi động, vì vậy hãy khởi động lại `runserver`
+sau khi sửa. Các biến môi trường hệ thống, nếu có, được ưu tiên hơn `.env`.
+
 ## Cấu trúc dự án
 
 ```
@@ -83,9 +116,9 @@ sql/            # Hướng dẫn PostgreSQL/DBeaver và schema tham khảo
 ## Tính năng
 
 - [x] Đăng ký, đăng nhập/đăng xuất và cập nhật hồ sơ cá nhân
-- [x] Đăng nhập Google tùy chọn và liên kết tài khoản Google từ hồ sơ
+- [x] Liên kết Google Drive từ hồ sơ để mở bản sao tài liệu Office trong Google Workspace
 - [x] Tìm kiếm tài liệu theo từng từ khóa trong tiêu đề, mô tả, môn học và danh mục; duyệt theo danh mục
-- [x] Đăng tài liệu theo danh mục có sẵn hoặc tạo danh mục mới; kiểm duyệt và phân quyền hiển thị công khai/yêu cầu đăng nhập
+- [x] Đăng tài liệu theo danh mục có sẵn hoặc tạo danh mục mới; tự động chặn tệp trùng nội dung trước kiểm duyệt và phân quyền hiển thị công khai/yêu cầu đăng nhập
 - [x] Hiện nội dung PDF, DOCX và các tệp văn bản TXT/Markdown/CSV trên trang chi tiết
 - [x] Ghi nhận lượt xem, lượt tải và danh sách tài liệu đã tải xuống
 - [x] Bình luận một chiều, sửa/xóa bình luận của chính mình và đánh giá một lần
@@ -98,7 +131,9 @@ sql/            # Hướng dẫn PostgreSQL/DBeaver và schema tham khảo
 Tài khoản mới có vai trò thành viên. Để cấp quyền quản trị viên, đăng nhập vào
 Django admin và đổi trường **Vai trò** của tài khoản thành **Quản trị viên**
 (hoặc dùng tài khoản superuser). Tài liệu tải lên ở trạng thái chờ duyệt; quản
-trị viên duyệt tại trang **Duyệt tài liệu** trên thanh điều hướng.
+trị viên duyệt tại trang **Duyệt tài liệu** trên thanh điều hướng. Hệ thống tự
+đối chiếu tên tệp, kích thước và dấu vân tay nội dung; tệp có cùng nội dung với
+tài liệu đã được duyệt hoặc đang chờ duyệt sẽ bị chặn trước khi vào hàng kiểm duyệt.
 
 Sau khi nạp dữ liệu mẫu, đăng nhập bằng `demo_admin` để duyệt tài liệu và xử lý
 báo cáo; `demo_member` dùng để thử các luồng thành viên. Khi nhập catalog, các
@@ -106,15 +141,14 @@ tài khoản `demo_member1` đến `demo_member5` được tạo để làm ngư
 Mật khẩu được truyền qua `--password` chỉ áp dụng cho tài khoản mới tạo; lệnh
 không đặt lại mật khẩu của tài khoản đã có.
 
-### Đăng nhập Google (tùy chọn)
+### Kết nối Google Drive (tùy chọn)
 
-Tạo OAuth 2.0 Web Client trong Google Cloud Console, thêm callback
-`http://127.0.0.1:8000/accounts/google/callback/` vào danh sách redirect URI,
-sau đó cấu hình `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` và
-`GOOGLE_OAUTH_REDIRECT_URI` trong môi trường chạy ứng dụng. Không lưu các giá
-trị này vào Git. Khi chưa cấu hình, đăng nhập bằng tên tài khoản/mật khẩu vẫn
-hoạt động bình thường. Nếu email Google trùng với tài khoản có sẵn, hãy đăng
-nhập tài khoản đó trước rồi liên kết Google tại trang hồ sơ.
+Tạo OAuth 2.0 Web Client trong Google Cloud Console, bật Google Drive API, thêm
+callback `http://127.0.0.1:8000/accounts/google/drive/callback/` vào danh sách
+redirect URI, rồi cấu hình `GOOGLE_OAUTH_CLIENT_ID` và
+`GOOGLE_OAUTH_CLIENT_SECRET` trong môi trường chạy ứng dụng. Không lưu các giá
+trị này vào Git. Đăng nhập EduHub chỉ dùng tên tài khoản và mật khẩu; người dùng
+có thể kết nối Google Drive tại trang hồ sơ để mở tài liệu Office.
 
 Tài liệu yêu cầu đăng nhập chỉ cho thành viên xem nội dung/tải xuống sau khi
 đăng nhập. Khách có thể xem trước tài liệu công khai nhưng cần đăng nhập để tải.
@@ -122,9 +156,11 @@ Bình luận và đánh giá của khách được giữ trong session và gửi
 tất đăng nhập. Tệp tải lên giới hạn 25 MiB và nhận PDF, DOC/DOCX, PPT/PPTX,
 XLS/XLSX, TXT, Markdown hoặc CSV.
 
-Trang chi tiết nhúng PDF để đọc trực tiếp, trích xuất nội dung đoạn văn/bảng
-của DOCX và hiển thị đầy đủ tệp TXT, Markdown, CSV. Định dạng chưa hỗ trợ
-preview cần tải về để mở bằng ứng dụng tương ứng.
+PDF được mở trực tiếp bằng trình đọc của trình duyệt trong tab mới. CSV/XLS/XLSX
+được nhập thành bản sao Google Sheets; DOC/DOCX/MD/TXT thành Google Docs; PPT/PPTX
+thành Google Slides. Việc nhập yêu cầu người dùng đã đăng nhập và kết nối Google
+Drive; tài liệu được lưu riêng trong Drive của người mở.
+Người dùng có thể liên kết hoặc hủy liên kết tài khoản Drive tại trang hồ sơ.
 
 Các tệp tài liệu không được phục vụ trực tiếp từ đường dẫn media; tải xuống đi
 qua endpoint có kiểm tra trạng thái và quyền. Khi triển khai production, không

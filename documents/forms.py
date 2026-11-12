@@ -94,6 +94,26 @@ class DocumentUploadForm(forms.ModelForm):
             raise forms.ValidationError(
                 f'Tệp vượt quá giới hạn {maximum_mb} MB.'
             )
+        filename, file_size, file_sha256 = Document.get_file_metadata(uploaded_file)
+        self.instance.original_filename = filename
+        self.instance.file_size = file_size
+        self.instance.file_sha256 = file_sha256
+        self.instance._file_metadata_precomputed = True
+
+        duplicate = Document.objects.filter(
+            file_size=file_size,
+            file_sha256=file_sha256,
+            status__in=(Document.Status.PENDING, Document.Status.APPROVED),
+        ).exclude(pk=self.instance.pk).first()
+        if duplicate:
+            if duplicate.original_filename.casefold() == filename.casefold():
+                duplicate_match = 'cùng tên tệp, kích thước và nội dung'
+            else:
+                duplicate_match = 'cùng kích thước và nội dung dù tên tệp khác nhau'
+            raise forms.ValidationError(
+                f'Tệp này trùng với một tài liệu đã có trong hệ thống '
+                f'({duplicate_match}) và không thể gửi duyệt thêm.'
+            )
         return uploaded_file
 
 

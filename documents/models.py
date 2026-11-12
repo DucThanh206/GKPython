@@ -1,3 +1,6 @@
+import hashlib
+from pathlib import PurePosixPath
+
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
@@ -32,6 +35,11 @@ class Document(models.Model):
     title = models.CharField('Tiêu đề', max_length=255)
     description = models.TextField('Mô tả', blank=True)
     file = models.FileField('Tệp tài liệu', upload_to='documents/%Y/%m/')
+    original_filename = models.CharField(
+        'Tên tệp gốc', max_length=255, blank=True, db_index=True
+    )
+    file_size = models.PositiveBigIntegerField('Kích thước tệp', null=True, blank=True)
+    file_sha256 = models.CharField('Dấu vân tay nội dung', max_length=64, blank=True)
     subject = models.CharField('Môn học / chủ đề', max_length=150, blank=True)
     category = models.ForeignKey(
         Category, verbose_name='Danh mục',
@@ -62,10 +70,54 @@ class Document(models.Model):
         verbose_name = 'Tài liệu'
         verbose_name_plural = 'Tài liệu'
         ordering = ['-uploaded_at']
-        indexes = [models.Index(fields=['status', 'uploaded_at'])]
+        indexes = [
+            models.Index(fields=['status', 'uploaded_at']),
+            models.Index(fields=['file_size', 'file_sha256'], name='doc_size_sha256_idx'),
+        ]
 
     def __str__(self):
         return self.title
+
+    @staticmethod
+    def get_file_metadata(file_obj):
+        filename = PurePosixPath(file_obj.name).name
+        file_obj.seek(0)
+        digest = hashlib.sha256()
+        size = 0
+        for chunk in file_obj.chunks():
+            size += len(chunk)
+            digest.update(chunk)
+        file_obj.seek(0)
+        return filename, size, digest.hexdigest()
+
+    def save(self, *args, **kwargs):
+        metadata_updated = False
+        if self.file and (
+            self._state.adding
+            or not self.file._committed
+            or not self.file_sha256
+        ):
+            if not getattr(self, '_file_metadata_precomputed', False):
+                if self.file._committed:
+                    with self.file.open('rb'):
+                        metadata = self.get_file_metadata(self.file)
+                else:
+                    metadata = self.get_file_metadata(self.file)
+                (
+                    self.original_filename,
+                    self.file_size,
+                    self.file_sha256,
+                ) = metadata
+                metadata_updated = True
+        if metadata_updated and kwargs.get('update_fields') is not None:
+            kwargs['update_fields'] = set(kwargs['update_fields']) | {
+                'original_filename',
+                'file_size',
+                'file_sha256',
+            }
+        super().save(*args, **kwargs)
+        if hasattr(self, '_file_metadata_precomputed'):
+            del self._file_metadata_precomputed
 
     def get_absolute_url(self):
         return reverse('document_detail', kwargs={'pk': self.pk})

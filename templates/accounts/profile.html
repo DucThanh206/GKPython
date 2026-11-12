@@ -1,8 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Hồ sơ cá nhân - EduHub{% endblock %}
+
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-8">
+
         <header class="profile-heading">
             <button type="button" id="avatar-view-button" class="profile-avatar"
                     aria-label="Xem toàn ảnh đại diện" {% if not user.avatar %}disabled{% endif %}>
@@ -20,6 +22,7 @@
         <section class="profile-surface">
             <form method="post" enctype="multipart/form-data">
                 {% csrf_token %}
+
                 {% for field in form %}
                     <div class="profile-field">
                         <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
@@ -40,16 +43,44 @@
                         {% if field.errors %}<div class="field-error">{{ field.errors }}</div>{% endif %}
                     </div>
                 {% endfor %}
+
                 {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-                <button type="submit" class="btn btn-dark">Lưu thay đổi</button>
+                <button type="submit" class="btn btn-dark mt-2">Lưu thay đổi</button>
             </form>
         </section>
-        <section class="connected-account mt-3">
-            <div><strong>Đăng nhập Google</strong><p class="mb-0">{% if user.google_id %}Tài khoản Google đã được liên kết.{% else %}Liên kết để đăng nhập nhanh và an toàn hơn.{% endif %}</p></div>
-            {% if not user.google_id and google_oauth_enabled %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'google_login' %}">Liên kết Google</a>{% endif %}
+
+        <section class="connected-account mb-4 p-3 border rounded bg-light">
+            <div>
+                <strong>Mật khẩu & Bảo mật</strong>
+                <p class="mb-0 text-muted">Thay đổi mật khẩu đăng nhập để bảo vệ tài khoản của bạn.</p>
+            </div>
+            <a class="btn btn-sm btn-outline-danger" href="{% url 'password_change' %}">Đổi mật khẩu</a>
         </section>
+
+        {% if google_drive_enabled %}
+        <section class="connected-account mb-4 p-3 border rounded bg-light">
+            <div>
+                <strong>Google Workspace</strong>
+                {% if google_drive_connection %}
+                    <p class="mb-0 text-muted">Đã kết nối {{ google_drive_connection.google_email }}. Tài liệu mở từ EduHub sẽ được lưu trong Drive của tài khoản này.</p>
+                {% else %}
+                    <p class="mb-0 text-muted">Kết nối Google Drive để mở DOC, DOCX, MD, TXT, CSV, XLS, XLSX, PPT và PPTX.</p>
+                {% endif %}
+            </div>
+            {% if google_drive_connection %}
+                <form method="post" action="{% url 'google_drive_disconnect' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Hủy liên kết Drive</button>
+                </form>
+            {% else %}
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'google_drive_connect' %}">Kết nối Google Drive</a>
+            {% endif %}
+        </section>
+        {% endif %}
+
     </div>
 </div>
+
 <style>
     .profile-heading { display: flex; align-items: center; gap: 16px; margin: 8px 0 24px; }
     .profile-heading h1 { font-size: 36px; }
@@ -63,12 +94,8 @@
     .avatar-viewer img { display: block; max-width: calc(92vw - 32px); max-height: calc(92vh - 64px); object-fit: contain; }
     .avatar-viewer-close { position: absolute; top: 8px; right: 12px; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--warm); color: var(--copy); font-size: 24px; line-height: 1; cursor: pointer; }
     .profile-surface { padding: clamp(20px, 4vw, 34px); border: 1px solid rgba(0,0,0,.09); border-radius: 12px; background: var(--paper); }
-    .profile-field { margin-bottom: 19px; }
-    .profile-field textarea { min-height: 100px; }
-    .field-error { color: #a7473e; font-size: 12px; }
-    .connected-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 20px; border: 1px solid rgba(0,0,0,.08); border-radius: 10px; background: var(--cloud); }
-    .connected-account strong { color: var(--copy); font-size: 13px; }
-    .connected-account p { margin-top: 4px; color: var(--quiet); font-size: 12px; }
+    .profile-field input, .profile-field textarea { width: 100%; padding: 8px 12px; border: 1px solid #dcd8d0; border-radius: 6px; }
+    .connected-account { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; }
 </style>
 <script>
     const avatarInput = document.getElementById('id_avatar');

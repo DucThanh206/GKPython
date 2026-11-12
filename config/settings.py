@@ -13,8 +13,11 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / '.env', override=False)
 
 # Load local, git-ignored environment settings for commands started outside the
 # developer's configured shell (for example, management commands run by an IDE).
@@ -259,10 +262,7 @@ if EMAIL_USE_SSL and EMAIL_USE_TLS:
     raise RuntimeError("Enable only one of EMAIL_USE_SSL or EMAIL_USE_TLS.")
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', '')
-GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
-    'GOOGLE_OAUTH_REDIRECT_URI',
-    'http://127.0.0.1:8000/accounts/google/callback/',
-)
+GOOGLE_DRIVE_REDIRECT_URI = os.environ.get('GOOGLE_DRIVE_REDIRECT_URI', '')
 
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
 

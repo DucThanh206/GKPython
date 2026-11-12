@@ -15,10 +15,18 @@ def extract_docx_text(content):
     root = ElementTree.fromstring(document_xml)
     paragraphs = []
     for paragraph in root.findall('.//w:p', WORD_NAMESPACE):
-        text = ''.join(
-            node.text or ''
-            for node in paragraph.findall('.//w:t', WORD_NAMESPACE)
-        )
+        parts = []
+        for node in paragraph.iter():
+            if node.tag == f'{{{WORD_NAMESPACE["w"]}}}t':
+                parts.append(node.text or '')
+            elif node.tag == f'{{{WORD_NAMESPACE["w"]}}}tab':
+                parts.append('\t')
+            elif node.tag in (
+                f'{{{WORD_NAMESPACE["w"]}}}br',
+                f'{{{WORD_NAMESPACE["w"]}}}cr',
+            ):
+                parts.append('\n')
+        text = ''.join(parts)
         paragraphs.append(text)
     return '\n'.join(paragraphs)
 
@@ -27,4 +35,10 @@ def get_plain_text(content):
     return content.decode('utf-8-sig')
 
 
-__all__ = ['BadZipFile', 'ElementTree', 'TEXT_EXTENSIONS', 'extract_docx_text', 'get_plain_text']
+__all__ = [
+    'BadZipFile',
+    'ElementTree',
+    'TEXT_EXTENSIONS',
+    'extract_docx_text',
+    'get_plain_text',
+]
